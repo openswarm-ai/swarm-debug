@@ -465,6 +465,68 @@ def uninstall_cursor_skill():
 
 
 @app.command()
+def cheatsheet():
+    """Print common debug() recipes and options."""
+    from rich.syntax import Syntax
+
+    _console.print()
+    _console.print(Panel(
+        "[bold cyan]swarm-debug[/bold cyan] — [bold]debug()[/bold] library cheatsheet",
+        border_style="bright_cyan",
+    ))
+
+    basics = (
+        "from swarm_debug import debug\n\n"
+        'debug(value)                  # name + type + value\n'
+        'debug("a message")            # plain message (italic)\n'
+        'debug("x=%s", x)              # %-style formatting\n'
+        'debug(exc)                    # exceptions auto-highlight in red'
+    )
+    _console.print("[bold]Basics[/bold]")
+    _console.print(Syntax(basics, "python", theme="monokai", background_color="default"))
+
+    opts = Table(title="Options", show_header=True, border_style="bright_cyan", title_style="bold")
+    opts.add_column("Kwarg", style="bold cyan")
+    opts.add_column("Default", style="yellow")
+    opts.add_column("What it does")
+    opts.add_row("mode", '"debug"', 'Log level: "all", "debug", "test"')
+    opts.add_row("pretty", "True", "Pretty-print dicts/lists/dataclasses (False = flat)")
+    opts.add_row("lang", "None", 'Syntax-highlight strings, e.g. "sql", "json", "html"')
+    opts.add_row("table", "auto", "Table layout; auto-on for >1 data arg")
+    opts.add_row("sep", "—", "Join all args into one line with this separator")
+    opts.add_row("override_max_chars", "False", "Bypass the 3000-char truncation limit")
+    opts.add_row("error", "None", "Force error styling on/off (None = auto via BaseException)")
+    _console.print(opts)
+
+    recipes = (
+        "debug(my_dict)                 # Rich pretty-print\n"
+        "debug(my_dict, pretty=False)   # flat single line\n"
+        'debug(sql_query, lang="sql")   # SQL keyword highlighting\n'
+        "debug(x, y, z)                 # auto table: Name | Type | Value\n"
+        "debug(x, table=False)          # force one line per arg\n"
+        'debug("loading config", error=True)  # force error styling\n\n'
+        "debug.diff(old_state, new_state)          # unified, syntax-highlighted diff\n"
+        'debug.diff(old, new, label="state")       # custom label\n\n'
+        'with debug.time("database query"):        # green/yellow/red by duration\n'
+        "    result = db.execute(query)"
+    )
+    _console.print("[bold]Pretty-printing, diffs & timing[/bold]")
+    _console.print(Syntax(recipes, "python", theme="monokai", background_color="default"))
+
+    visibility = (
+        "swarm-debug toggle on  src/core/engine.py   # one file\n"
+        "swarm-debug toggle off src/agents/          # a whole directory\n"
+        "swarm-debug toggle on  --all                # everything\n"
+        'swarm-debug set-color  src/core/ "#ff0000"  # color a file/dir\n'
+        'swarm-debug set-emoji  src/core/ "🔥"        # emoji a file/dir\n'
+        "swarm-debug gui                             # web UI at localhost:6969"
+    )
+    _console.print("[bold]Controlling visibility (no code changes)[/bold]")
+    _console.print(Syntax(visibility, "bash", theme="monokai", background_color="default"))
+    _console.print()
+
+
+@app.command()
 def stats():
     """Show a flat table of all debug files with their status, color, and emoji."""
     from swarm_debug.core.DEFAULTS import get_root_dir

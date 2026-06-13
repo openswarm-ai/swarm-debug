@@ -37,13 +37,13 @@ def process(data):
     # ⚫ [MyClass.process] : (table with Name | Type | Value columns)
 ```
 
-Strings are rendered as italic labels. Everything else shows `name: type = value`. Multiple non-text args are auto-rendered as a Rich table. Errors are auto-detected and forced on in red regardless of toggle state.
+Strings are rendered as italic labels. Everything else shows `name: type = value`. Multiple non-text args are auto-rendered as a Rich table. Exceptions (any `BaseException`) are auto-detected and forced on in red regardless of toggle state; pass `error=True`/`error=False` to override.
 
 #### Full signature
 
 ```python
 debug(*args, mode='debug', override_max_chars=False, sep=<auto>, end='\n',
-      pretty=True, lang=None, table=<auto>)
+      pretty=True, lang=None, table=<auto>, error=None)
 ```
 
 | Kwarg | Type | Default | Description |
@@ -54,6 +54,17 @@ debug(*args, mode='debug', override_max_chars=False, sep=<auto>, end='\n',
 | `pretty` | `bool` | `True` | Pretty-print dicts, lists, sets, tuples, dataclasses with Rich |
 | `lang` | `str\|None` | `None` | Syntax-highlight all args as this language (e.g. `"sql"`, `"json"`) |
 | `table` | `bool` | auto | Force table layout on/off. Auto-on when >1 non-text data args |
+| `error` | `bool\|None` | `None` | Force error styling (red/❌, force-visible). `True` on, `False` off, `None` auto-detects via `isinstance(arg, BaseException)` |
+
+#### Error styling (explicit `error=`)
+
+```python
+debug(ValueError("boom"))             # exception -> auto red/❌, prints even if toggled OFF
+debug("loading config", error=True)   # force error styling on any value
+debug(exc, error=False)               # opt out, respects toggle state
+```
+
+Detection is type-based: only real `BaseException` instances auto-highlight. Ordinary strings/paths that merely contain the word "error" are **not** styled red unless you pass `error=True`.
 
 #### Pretty-printed data structures (on by default)
 
@@ -145,6 +156,7 @@ All commands work standalone (no server required). Paths are relative to project
 swarm-debug status              # human-readable tree with [ON]/[OFF] tags
 swarm-debug status --json       # machine-readable JSON (pipe to jq, python, etc.)
 swarm-debug stats               # flat table of all files with path/status/color/emoji
+swarm-debug cheatsheet          # print common debug() recipes and options
 
 # Toggle visibility
 swarm-debug toggle on  src/agents/planner.py    # single file

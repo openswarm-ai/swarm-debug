@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarm-debug"
-version = "0.1.47"
+version = "0.1.48"
 description = "A colorized, toggleable debug logger with a web GUI"
 readme = "README.md"
 license = "MIT"
@@ -40,4 +40,4 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-swarm_debug = ["debugger_gui_build/**/*", "data/*"]
+swarm_debug = ["py.typed", "debugger_gui_build/**/*", "data/*"]

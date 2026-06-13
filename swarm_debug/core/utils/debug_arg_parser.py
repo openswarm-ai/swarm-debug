@@ -1,6 +1,6 @@
 import re
 
-DEBUG_KWARGS = {'mode', 'override_max_chars', 'sep', 'end', 'pretty', 'lang', 'table'}
+DEBUG_KWARGS = {'mode', 'override_max_chars', 'sep', 'end', 'pretty', 'lang', 'table', 'error'}
 
 _PERCENT_FORMAT_RE = re.compile(r'%[-+0#]*(\*|\d+)(\.\*|\.\d+)?[diouxXeEfFgGcrsab]|%[-+0#]*(\.\*|\.\d+)[diouxXeEfFgGcrsab]|%[diouxXeEfFgGcrsab]|%%')
 
@@ -200,8 +200,6 @@ def is_text(arg_value, arg_name):
     return False
 
 
-def is_error(arg_value, arg_name):
-    return (isinstance(arg_value, Exception)
-            or "error" in str(arg_value).lower()
-            or "error" in str(arg_name).lower())
+def is_error(arg_value):
+    return isinstance(arg_value, BaseException)
 

@@ -63,7 +63,53 @@ def _is_complex(value) -> bool:
 def debug(*args, mode: str = 'debug', override_max_chars: bool = False,
           sep: str = _SENTINEL, end: str = '\n',
           pretty: bool = True, lang: Optional[str] = None,
-          table: bool = _SENTINEL):
+          table: bool = _SENTINEL, error: Optional[bool] = None):
+    """Drop-in replacement for print() with per-file colorized, toggleable output.
+
+    Pass variables directly -- debug() inspects the call stack to recover the
+    caller's file, function/class, variable names, and indentation. No format
+    strings or manual labels needed.
+
+        debug(user_id)            # [func] : user_id: int = 42
+        debug("checkpoint")       # [func] : checkpoint   (italic text)
+        debug(exc)                # exceptions auto-highlight red with a cross
+        debug("x=%s y=%s", x, y)  # %-style formatting
+
+    Visibility is controlled per-file/per-directory via the CLI (`swarm-debug
+    toggle ...`) or the web GUI (`swarm-debug gui`) -- not in code. Only files
+    toggled ON produce output.
+
+    Args:
+        *args: Values and/or messages to print. Strings render as messages;
+            other objects render with their name, type, and value.
+        mode: Log level. "all" (always shown), "debug" (default), "test"
+            (high priority).
+        override_max_chars: If True, bypass the 3000-char truncation limit.
+        sep: If given, join all args into one line with this separator
+            (like print(sep=...)).
+        end: Line terminator (reserved; output is line-based).
+        pretty: Pretty-print dicts/lists/sets/tuples/dataclasses with Rich.
+            Set False for flat single-line output.
+        lang: Syntax-highlight string args as this language, e.g. "sql",
+            "json", "html".
+        table: Force table layout on/off. Default (auto): on when more than one
+            non-text data arg is passed, off otherwise.
+        error: Override error styling (red + cross emoji, force-visible).
+            True forces it on; False forces it off even for exceptions;
+            None (default) auto-detects via isinstance(arg, BaseException).
+
+    Examples:
+        debug(my_dict)                       # pretty-printed structure
+        debug(my_dict, pretty=False)         # flat
+        debug(sql, lang="sql")               # SQL highlighting
+        debug(x, y, z)                       # auto table (Name|Type|Value)
+        debug(x, table=False)                # force per-line
+        debug("loading config", error=True)  # force error styling
+
+    See also:
+        debug.diff(old, new, label="diff")   # unified diff of two values
+        debug.time(label)                    # context manager that times a block
+    """
     frame = inspect.currentframe().f_back
     code = frame.f_code
     line_no = frame.f_lineno
@@ -106,6 +152,12 @@ def debug(*args, mode: str = 'debug', override_max_chars: bool = False,
             return s[:int(max_chars/2)] + "...\n..." + s[v_len-int(max_chars/2):]
         return value
 
+    def _err(*values):
+        """Resolve error state: explicit `error` kwarg wins; else BaseException type check."""
+        if error is not None:
+            return error
+        return any(is_error(v) for v in values)
+
     def _prefix(is_error_line=False):
         """Build the colored prefix with clickable link. Returns (markup_str, effective_color, effective_is_on)."""
         nonlocal t_color, t_emoji, t_is_on
@@ -145,7 +197,7 @@ def debug(*args, mode: str = 'debug', override_max_chars: bool = False,
 
     # --- table mode: render all args in a table ---
     if table:
-        pfx, color, is_on = _prefix()
+        pfx, color, is_on = _prefix(_err(*args))
         if is_on:
             t = Table(title=None, show_header=True, border_style=color)
             t.add_column("Name", style="bold")
@@ -161,7 +213,7 @@ def debug(*args, mode: str = 'debug', override_max_chars: bool = False,
     # --- syntax-highlighted lang mode ---
     if lang is not None:
         for a_name, a_value in zip(arg_names, args):
-            err = is_error(a_value, a_name)
+            err = _err(a_value)
             pfx, color, is_on = _prefix(err)
             if not is_on:
                 continue
@@ -180,7 +232,7 @@ def debug(*args, mode: str = 'debug', override_max_chars: bool = False,
         except (TypeError, ValueError):
             formatted = args[0]
         formatted = _truncate(formatted)
-        err = is_error(formatted, arg_names[0] if arg_names else '')
+        err = _err(*args[1:])
         _emit(formatted, is_error_line=err, bold_italic=True)
         return
 
@@ -188,13 +240,13 @@ def debug(*args, mode: str = 'debug', override_max_chars: bool = False,
     if sep is not _SENTINEL:
         joined = sep.join(str(a) for a in args)
         joined = _truncate(joined)
-        err = is_error(joined, '')
+        err = _err(*args)
         _emit(joined, is_error_line=err, bold_italic=True)
         return
 
     # --- default per-argument output ---
     for arg_name, arg_value in zip(arg_names, args):
-        arg_is_error = is_error(arg_value, arg_name)
+        arg_is_error = _err(arg_value)
         arg_is_text = is_text(arg_value, arg_name)
 
         arg_value = _truncate(arg_value)
@@ -223,7 +275,21 @@ def _esc(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _debug_diff(old, new, label: str = "diff", mode: str = "debug"):
-    """Show a unified diff between two values, rendered with syntax highlighting."""
+    """Print a unified diff between two values, syntax-highlighted.
+
+    Values are pretty-formatted (pprint) before diffing, so it works on dicts,
+    lists, dataclasses, and other structures -- not just strings. Respects the
+    caller file's toggle state.
+
+        debug.diff(old_state, new_state)                 # label "diff"
+        debug.diff(old_state, new_state, label="state")  # custom label
+
+    Args:
+        old: The "before" value.
+        new: The "after" value.
+        label: Heading shown next to the diff.
+        mode: Log level, same semantics as debug(mode=...).
+    """
     frame = inspect.currentframe().f_back
     code = frame.f_code
     line_no = frame.f_lineno
@@ -265,7 +331,19 @@ debug.diff = _debug_diff
 
 @contextmanager
 def _debug_time(label: str = "block", mode: str = "debug"):
-    """Context manager that times a block and emits the elapsed duration."""
+    """Time a block of code and print the elapsed duration.
+
+    Color-coded by duration: green < 0.1s, yellow < 1.0s, red otherwise.
+    Respects the caller file's toggle state.
+
+        with debug.time("database query"):
+            result = db.execute(query)
+        # [func] : ⏱ database query took 0.123s
+
+    Args:
+        label: Name shown for the timed block.
+        mode: Log level, same semantics as debug(mode=...).
+    """
     frame = inspect.currentframe().f_back.f_back
     code = frame.f_code
     line_no = frame.f_lineno
