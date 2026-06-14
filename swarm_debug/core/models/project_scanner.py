@@ -52,7 +52,7 @@ def merge_directories(json_dir: Directory, scanned_dir: Directory):
                 construct_merged_dir(matching_json_child, scanned_child)
             else:
                 scanned_child.color = DEFAULT_COLOR
-                scanned_child.is_toggled = DEFAULT_TOGGLED
+                scanned_child.is_toggled = scanned_dir.is_toggled
                 scanned_child.set_manually = DEFAULT_SET_MANUALLY
                 scanned_child.set_manually_color = DEFAULT_SET_MANUALLY_COLOR
                 scanned_child.set_manually_emoji = DEFAULT_SET_MANUALLY_EMOJI

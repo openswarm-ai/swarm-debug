@@ -21,6 +21,7 @@ function updateChildrenToggle(
   return children.map((child) => ({
     ...child,
     is_toggled: checked,
+    set_manually: true,
     children: updateChildrenToggle(child.children, checked),
   }));
 }
@@ -72,6 +73,7 @@ export function toggleTargetNode(
       return {
         ...node,
         is_toggled: checked,
+        set_manually: true,
         children: updateChildrenToggle(node.children, checked),
       };
     }

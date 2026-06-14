@@ -122,13 +122,21 @@ class Directory:
     def propagate_toggled_state(self):
         """
         Propagates the toggled state down the hierarchy.
+
+        Only a directory that was *explicitly* toggled (``set_manually``) forces
+        its state onto descendants. A directory whose ``is_toggled`` is merely a
+        derived aggregate of its children (e.g. the GUI's ``recomputeParentToggles``
+        sets a parent to ``False`` whenever any child is off) must NOT clobber its
+        on siblings, otherwise per-file toggles collapse into all-or-nothing.
         """
         for child in self.children:
-            if isinstance(child, DebugFile) and not child.set_manually:
-                child.is_toggled = self.is_toggled
-            elif isinstance(child, Directory) and not child.set_manually:
-                child.is_toggled = self.is_toggled
+            if isinstance(child, Directory):
+                if self.set_manually and not child.set_manually:
+                    child.is_toggled = self.is_toggled
+                    child.set_manually = True
                 child.propagate_toggled_state()
+            elif isinstance(child, DebugFile) and self.set_manually and not child.set_manually:
+                child.is_toggled = self.is_toggled
 
     def propagate_color(self, parent_color=DEFAULT_COLOR):
         """
