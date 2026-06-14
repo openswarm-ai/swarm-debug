@@ -32,6 +32,7 @@ interface DebuggerState {
   expanded: ExpandedState;
   error: string | null;
   loading: boolean;
+  fetching: boolean;
   dirty: boolean;
   saveStatus: SaveStatus;
   settings: DebuggerSettings;
@@ -44,6 +45,7 @@ const initialState: DebuggerState = {
   expanded: {},
   error: null,
   loading: true,
+  fetching: false,
   dirty: false,
   saveStatus: 'idle',
   settings: loadSettings(),
@@ -118,12 +120,14 @@ const debuggerSlice = createSlice({
     builder
       .addCase(pullWithRetry.pending, (state) => {
         state.loading = true;
+        state.fetching = true;
         state.error = null;
       })
       .addCase(pullWithRetry.fulfilled, (state, action) => {
         state.projectStructure = action.payload;
         state.lastSavedSnapshot = treeFingerprint(action.payload);
         state.loading = false;
+        state.fetching = false;
         state.error = null;
         state.dirty = false;
         if (state.settings.defaultExpanded) {
@@ -134,6 +138,7 @@ const debuggerSlice = createSlice({
       })
       .addCase(pullWithRetry.rejected, (state, action) => {
         state.loading = false;
+        state.fetching = false;
         state.error = action.error.message || 'Unknown error';
       })
 

@@ -8,6 +8,18 @@ import {
 import { TreeNodeData } from '@/types';
 import type { RootState } from './store';
 
+const PULL_TIMEOUT_MS = 15000;
+
+const fetchWithTimeout = async (url: string, timeoutMs: number): Promise<Response> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export const pullWithRetry = createAsyncThunk(
   'debugger/pullWithRetry',
   async (_, { getState }) => {
@@ -16,7 +28,10 @@ export const pullWithRetry = createAsyncThunk(
 
     for (let attempt = 1; attempt <= pullRetryCount; attempt++) {
       try {
-        const response = await fetch(PULL_STRUCTURE_URL);
+        const response = await fetchWithTimeout(PULL_STRUCTURE_URL, PULL_TIMEOUT_MS);
+        if (!response.ok) {
+          throw new Error(`Server responded with ${response.status}`);
+        }
         const data: TreeNodeData[] = await response.json();
         return data;
       } catch {
@@ -33,7 +48,10 @@ export const pullWithRetry = createAsyncThunk(
   {
     condition: (_, { getState }) => {
       const { debugger: state } = (getState() as RootState);
-      return !state.loading;
+      // Guard against overlapping in-flight pulls only. Must NOT key off
+      // `loading`, which starts true for the initial UI state and would
+      // otherwise cancel the very first (legitimate) load.
+      return !state.fetching;
     },
   },
 );

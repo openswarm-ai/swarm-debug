@@ -26,7 +26,7 @@ debugger = SubApp("debugger", debugger_lifespan)
 
 @debugger.router.get("/pull_structure")
 @typechecked
-async def pull_structure() -> JSONResponse:
+def pull_structure() -> JSONResponse:
     log.info("GET /api/debugger/pull_structure")
     scanned_dir = update_debug_toggles(save_to_file=False)
     output = dir_to_output_format(scanned_dir)
@@ -50,7 +50,7 @@ async def push_structure(data: dict) -> JSONResponse:
 
 @debugger.router.post("/reset_color")
 @typechecked
-async def reset_color() -> JSONResponse:
+def reset_color() -> JSONResponse:
     log.info("POST /api/debugger/reset_color")
     scanned_dir = update_debug_toggles(save_to_file=False)
     scanned_dir.reset_colors()
@@ -60,7 +60,7 @@ async def reset_color() -> JSONResponse:
 
 @debugger.router.post("/reset_emoji")
 @typechecked
-async def reset_emoji() -> JSONResponse:
+def reset_emoji() -> JSONResponse:
     log.info("POST /api/debugger/reset_emoji")
     scanned_dir = update_debug_toggles(save_to_file=False)
     scanned_dir.reset_emojis()

@@ -115,7 +115,7 @@ echo "Cleaning previous build artifacts..."
 rm -rf "$ROOT_DIR/dist" \
        "$ROOT_DIR/build" \
        "$ROOT_DIR"/*.egg-info \
-       "$ROOT_DIR/backend/debugger_gui_build"
+       "$ROOT_DIR/swarm_debug/debugger_gui_build"
 
 # ── Build frontend ───────────────────────────────────────────
 echo "Building frontend..."
@@ -124,8 +124,8 @@ npm ci
 npm run build
 
 # ── Copy frontend build into the Python package ──────────────
-echo "Copying frontend build to backend/debugger_gui_build/..."
-cp -r "$ROOT_DIR/frontend/dist" "$ROOT_DIR/backend/debugger_gui_build"
+echo "Copying frontend build to swarm_debug/debugger_gui_build/..."
+cp -r "$ROOT_DIR/frontend/dist" "$ROOT_DIR/swarm_debug/debugger_gui_build"
 
 # ── Build Python sdist + wheel ───────────────────────────────
 echo "Building Python package..."

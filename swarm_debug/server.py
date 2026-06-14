@@ -25,6 +25,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from rich.console import Console as _Console
+
+_req_console = _Console(stderr=True, color_system="truecolor")
+
+
+@app.middleware("http")
+async def _log_requests(request, call_next):
+    """When verbose, print each request's start/end so hangs are visible.
+
+    A request that logs a START line but never a matching END line is stuck
+    inside the handler (e.g. a blocking scan) — exactly what we need to see.
+    """
+    if os.environ.get("SWARM_DEBUG_VERBOSE") != "1":
+        return await call_next(request)
+
+    import time as _time
+
+    method = request.method
+    path = request.url.path
+    _req_console.print(f"[dim]→[/dim] [bold cyan]{method}[/bold cyan] {path} [dim]…[/dim]")
+    start = _time.monotonic()
+    try:
+        response = await call_next(request)
+    except Exception as exc:  # noqa: BLE001 - surface any handler error to the terminal
+        dur = (_time.monotonic() - start) * 1000
+        _req_console.print(
+            f"[bold red]✘[/bold red] [bold cyan]{method}[/bold cyan] {path} "
+            f"[red]raised {type(exc).__name__}: {exc}[/red] [dim]({dur:.0f}ms)[/dim]"
+        )
+        raise
+    dur = (_time.monotonic() - start) * 1000
+    color = "green" if response.status_code < 400 else "red"
+    _req_console.print(
+        f"[dim]←[/dim] [bold cyan]{method}[/bold cyan] {path} "
+        f"[{color}]{response.status_code}[/{color}] [dim]({dur:.0f}ms)[/dim]"
+    )
+    return response
+
+
 from fastapi.staticfiles import StaticFiles
 
 BUILD_DIR = os.path.join(os.path.dirname(__file__), "debugger_gui_build")

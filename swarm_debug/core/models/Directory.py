@@ -64,6 +64,9 @@ class Directory:
             
 
     def build_structure(self):
+        import threading
+        from contextlib import nullcontext
+
         from rich.console import Console
 
         console = Console()
@@ -76,18 +79,25 @@ class Directory:
                     if entry.name in excluded_dirs:
                         continue
                     root_rel_path = get_root_rel_path(entry.path)
-                    if entry.is_dir():
+                    if entry.is_dir(follow_symlinks=False):
                         subdir = Directory(root_rel_path)
                         construct_project_structure(entry.path, subdir)
                         parent_dir.add_child(subdir)
-                    elif entry.is_file():
+                    elif entry.is_file(follow_symlinks=False):
                         debug_file = DebugFile(filename=entry.name, path=root_rel_path)
                         if debug_file.calls_debug_function():
                             parent_dir.add_child(debug_file)
-                    else:
-                        raise Exception(f"Entry is not dir or file: {entry.path}")
 
-        with console.status("[bold green]Scanning project...", spinner="dots"):
+        # The Rich live spinner is only safe on the main thread of an interactive
+        # terminal. When the scan runs inside the GUI server's worker thread it
+        # would otherwise wedge the request, so fall back to a no-op context.
+        on_main_thread = threading.current_thread() is threading.main_thread()
+        if console.is_terminal and on_main_thread:
+            status_cm = console.status("[bold green]Scanning project...", spinner="dots")
+        else:
+            status_cm = nullcontext()
+
+        with status_cm:
             construct_project_structure(root_dir, self)
         return
 

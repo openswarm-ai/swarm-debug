@@ -1,11 +1,11 @@
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
 const FONT_SERIF = '"Anthropic Sans", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
 const FONT_MONO = 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
 
-const tokens = {
+const darkTokens = {
   bg: {
     page: '#1a1918',
     surface: '#262624',
@@ -57,44 +57,143 @@ const tokens = {
   transition: 'all 300ms cubic-bezier(0.165, 0.85, 0.45, 1)',
 };
 
-type ClaudeTokens = typeof tokens;
+type ClaudeTokens = typeof darkTokens;
 
-const TokensContext = createContext<ClaudeTokens>(tokens);
+const lightTokens: ClaudeTokens = {
+  bg: {
+    page: '#FAF9F5',
+    surface: '#ffffff',
+    elevated: '#f3f1ec',
+    secondary: '#f0eee8',
+    inverse: '#1a1918',
+  },
+  text: {
+    primary: '#1a1918',
+    secondary: '#44423d',
+    tertiary: '#6b6962',
+    muted: '#8a887f',
+    ghost: 'rgba(107,105,98,0.5)',
+  },
+  accent: {
+    primary: '#c4633a',
+    hover: '#d47548',
+    pressed: '#ae5630',
+  },
+  user: { bubble: '#ece9e2' },
+  border: {
+    subtle: 'rgba(0,0,0,0.08)',
+    medium: 'rgba(0,0,0,0.12)',
+    strong: 'rgba(0,0,0,0.18)',
+  },
+  shadow: {
+    sm: '0 1px 3px rgba(0,0,0,0.08)',
+    md: '0 0.25rem 1.25rem rgba(0,0,0,0.10)',
+    lg: '0 0.5rem 2rem rgba(0,0,0,0.15)',
+  },
+  status: {
+    success: '#2e7d32',
+    successBg: 'rgba(46,125,50,0.10)',
+    error: '#c62828',
+    errorBg: 'rgba(198,40,40,0.10)',
+  },
+  radius: {
+    xs: 4,
+    sm: 6,
+    md: 8,
+    lg: 10,
+    xl: 12,
+    full: 9999,
+  },
+  font: {
+    serif: FONT_SERIF,
+    mono: FONT_MONO,
+  },
+  transition: 'all 300ms cubic-bezier(0.165, 0.85, 0.45, 1)',
+};
+
+const TokensContext = createContext<ClaudeTokens>(lightTokens);
 
 export function useClaudeTokens(): ClaudeTokens {
   return useContext(TokensContext);
 }
 
+type ThemeMode = 'light' | 'dark';
+
+interface ThemeModeContextValue {
+  mode: ThemeMode;
+  toggleMode: () => void;
+}
+
+const ThemeModeContext = createContext<ThemeModeContextValue>({
+  mode: 'light',
+  toggleMode: () => {},
+});
+
+export function useThemeMode(): ThemeModeContextValue {
+  return useContext(ThemeModeContext);
+}
+
+const THEME_STORAGE_KEY = 'debugger-theme';
+
+const loadMode = (): ThemeMode => {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return saved === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+};
+
+const createMuiTheme = (mode: ThemeMode, tokens: ClaudeTokens) =>
+  createTheme({
+    palette: { mode },
+    typography: {
+      fontFamily: FONT_SERIF,
+      button: { textTransform: 'none' as const },
+    },
+    components: {
+      MuiCssBaseline: {
+        styleOverrides: {
+          body: {
+            backgroundColor: tokens.bg.page,
+            color: tokens.text.primary,
+          },
+        },
+      },
+    },
+  });
+
 interface ClaudeThemeProviderProps {
   children: React.ReactNode;
 }
 
-const muiTheme = createTheme({
-  palette: { mode: 'dark' },
-  typography: {
-    fontFamily: FONT_SERIF,
-    button: { textTransform: 'none' as const },
-  },
-  components: {
-    MuiCssBaseline: {
-      styleOverrides: {
-        body: {
-          backgroundColor: tokens.bg.page,
-          color: tokens.text.primary,
-        },
-      },
-    },
-  },
-});
-
 const ClaudeThemeProvider: React.FC<ClaudeThemeProviderProps> = ({ children }) => {
+  const [mode, setMode] = useState<ThemeMode>(loadMode);
+
+  const toggleMode = () => {
+    setMode((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      try {
+        localStorage.setItem(THEME_STORAGE_KEY, next);
+      } catch {
+        /* ignore persistence errors */
+      }
+      return next;
+    });
+  };
+
+  const tokens = mode === 'light' ? lightTokens : darkTokens;
+  const muiTheme = useMemo(() => createMuiTheme(mode, tokens), [mode, tokens]);
+
   return (
-    <TokensContext.Provider value={tokens}>
-      <ThemeProvider theme={muiTheme}>
-        <CssBaseline />
-        {children}
-      </ThemeProvider>
-    </TokensContext.Provider>
+    <ThemeModeContext.Provider value={{ mode, toggleMode }}>
+      <TokensContext.Provider value={tokens}>
+        <ThemeProvider theme={muiTheme}>
+          <CssBaseline />
+          {children}
+        </ThemeProvider>
+      </TokensContext.Provider>
+    </ThemeModeContext.Provider>
   );
 };
 

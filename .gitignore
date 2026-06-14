@@ -16,7 +16,6 @@ backend/needs_resync.txt
 backend/log_mode.txt
 
 # PyPI build artifacts
-backend/debugger_gui_build/
 *.tar.gz
 *.whl
 
