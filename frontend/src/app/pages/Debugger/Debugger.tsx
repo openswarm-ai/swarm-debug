@@ -10,8 +10,6 @@ import { pullWithRetry, pushStructure, setSaveStatus, expandAll, collapseAll } f
 import { EVENTS_URL } from '@/shared/state/API_ENDPOINTS';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
-import DebuggerHeader from '@/app/pages/Debugger/DebuggerHeader';
-import SettingsModal from '@/app/components/SettingsModal/SettingsModal';
 import Tree from '@/app/components/Tree/Tree';
 import SyncSection from '@/app/components/SyncSection/SyncSection';
 
@@ -26,7 +24,6 @@ const Debugger: React.FC = () => {
   const dirty = useAppSelector((s) => s.debugger.dirty);
   const saveStatus = useAppSelector((s) => s.debugger.saveStatus);
   const settings = useAppSelector((s) => s.debugger.settings);
-  const showSettings = useAppSelector((s) => s.debugger.showSettings);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -72,9 +69,7 @@ const Debugger: React.FC = () => {
   }, [dirty, settings.autoSave, dispatch]);
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: c.bg.page, color: c.text.primary }}>
-      <DebuggerHeader />
-
+    <Box sx={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', bgcolor: c.bg.page, color: c.text.primary }}>
       <Box
         component="main"
         sx={{ maxWidth: 960, mx: 'auto', px: 3, pt: 3, pb: 6 }}
@@ -258,8 +253,6 @@ const Debugger: React.FC = () => {
           </motion.div>
         )}
       </Box>
-
-      {showSettings && <SettingsModal />}
     </Box>
   );
 };

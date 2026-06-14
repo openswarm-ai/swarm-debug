@@ -1,9 +1,11 @@
 import { configureStore } from '@reduxjs/toolkit';
 import debuggerReducer from './debuggerSlice';
+import depgraphReducer from './depgraphSlice';
 
 export const store = configureStore({
   reducer: {
     debugger: debuggerReducer,
+    depgraph: depgraphReducer,
   },
 });
 

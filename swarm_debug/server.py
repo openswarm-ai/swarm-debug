@@ -12,9 +12,10 @@ logging.basicConfig(
 from swarm_debug.config.Apps import MainApp
 from swarm_debug.apps.health.health import health
 from swarm_debug.apps.debugger.debugger import debugger
+from swarm_debug.apps.depgraph.depgraph import depgraph
 from fastapi.middleware.cors import CORSMiddleware
 
-main_app = MainApp([health, debugger])
+main_app = MainApp([health, debugger, depgraph])
 app = main_app.app
 
 app.add_middleware(
@@ -64,12 +65,23 @@ async def _log_requests(request, call_next):
     return response
 
 
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 
 BUILD_DIR = os.path.join(os.path.dirname(__file__), "debugger_gui_build")
+INDEX_FILE = os.path.join(BUILD_DIR, "index.html")
 
 if os.path.isdir(BUILD_DIR):
-    app.mount("/", StaticFiles(directory=BUILD_DIR, html=True), name="gui")
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Serve built static assets, falling back to index.html for client-side
+        routes (so deep links like /graph work on a hard refresh). API routes are
+        registered earlier and take precedence over this catch-all."""
+        candidate = os.path.normpath(os.path.join(BUILD_DIR, full_path))
+        if full_path and candidate.startswith(BUILD_DIR) and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        if os.path.isfile(INDEX_FILE):
+            return FileResponse(INDEX_FILE)
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
 
 
 def _wait_for_server(port: int, timeout: float = 10.0, show_progress: bool = True) -> bool:

@@ -1,3 +1,21 @@
+/*!
+ * cytoscape-dagre 3.0.0
+ * https://github.com/cytoscape/cytoscape.js-dagre
+ * License: MIT
+ */
+
+/*!
+Embeddable Minimum Strictly-Compliant Promises/A+ 1.1.1 Thenable
+Copyright (c) 2013-2014 Ralf S. Engelschall (http://engelschall.com)
+Licensed under The MIT License (http://opensource.org/licenses/MIT)
+*/
+
+/*! Bezier curve function generator. Copyright Gaetan Renaudeau. MIT License: http://en.wikipedia.org/wiki/MIT_License */
+
+/*! For license information please see dagre.esm.js.LEGAL.txt */
+
+/*! Runge-Kutta spring physics function generator. Adapted from Framer.js, copyright Koen Bok. MIT License: http://en.wikipedia.org/wiki/MIT_License */
+
 /**
  * @license React
  * react-dom.production.min.js
