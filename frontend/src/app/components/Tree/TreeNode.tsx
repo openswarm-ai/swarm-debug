@@ -7,9 +7,10 @@ import Tooltip from '@mui/material/Tooltip';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import InvertColorsIcon from '@mui/icons-material/InvertColors';
 import { motion } from 'framer-motion';
-import { useClaudeTokens } from '@/shared/styles/ThemeContext';
+import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { toggleExpanded, checkboxChange, colorChange } from '@/shared/state/debuggerSlice';
+import { adaptColorForMode } from '@/shared/state/treeUtils';
 import EmojiPicker from '@/app/components/EmojiPicker/EmojiPicker';
 import { TreeNodeData } from '@/types';
 import { TreeHoverContext } from '@/app/components/Tree/TreeHoverContext';
@@ -30,7 +31,9 @@ interface TreeNodeProps {
 
 const TreeNode: React.FC<TreeNodeProps> = ({ node, nodeId, renderTree, index, depth }) => {
   const c = useClaudeTokens();
+  const { mode } = useThemeMode();
   const dispatch = useAppDispatch();
+  const nodeColor = node.color ? adaptColorForMode(node.color, mode) : null;
   const isExpanded = useAppSelector((s) => s.debugger.expanded[nodeId]);
   const isDirectory = node.children && node.children.length > 0;
   const indeterminate = !!isDirectory && !node.is_toggled && hasAnyToggledDescendant(node);
@@ -112,7 +115,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, nodeId, renderTree, index, de
                 fontSize: '0.875rem',
                 fontFamily: c.font.mono,
                 fontWeight: isDirectory ? 600 : 400,
-                color: node.color || c.text.primary,
+                color: nodeColor || c.text.primary,
                 opacity: (node.is_toggled || indeterminate) ? 1 : 0.38,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -129,7 +132,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, nodeId, renderTree, index, de
                   className="color-picker-reveal"
                   onClick={() => setShowColorPicker((prev) => !prev)}
                   sx={{
-                    color: node.color || c.text.tertiary,
+                    color: nodeColor || c.text.tertiary,
                     opacity: 0,
                     '&:focus': { opacity: 0.7 },
                     '&:hover': { color: c.accent.primary, opacity: 1 },
@@ -142,7 +145,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({ node, nodeId, renderTree, index, de
               </Tooltip>
               {showColorPicker && (
                 <ColorPickerPopup
-                  color={node.color || '#ffffff'}
+                  color={node.color || c.text.primary}
                   onChange={(col: string) => dispatch(colorChange({ nodeId, color: col }))}
                   onClose={() => setShowColorPicker(false)}
                 />

@@ -53,13 +53,43 @@ export function treeFingerprint(nodes: TreeNodeData[] | null): string {
 
 function lightenColor(color: string, amt = 50): string {
   if (!color || typeof color !== 'string' || !color.startsWith('#') || color.length !== 7) {
-    return '#ffffff';
+    return color;
   }
   const colorInt = parseInt(color.slice(1), 16);
   const r = Math.min(255, (colorInt >> 16) + amt);
   const g = Math.min(255, ((colorInt >> 8) & 0x00ff) + amt);
   const b = Math.min(255, (colorInt & 0x0000ff) + amt);
   return `#${((r << 16) + (g << 8) + b).toString(16).padStart(6, '0')}`;
+}
+
+const toHex = (v: number): string =>
+  Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+
+/**
+ * Adapts a user-assigned node color so it stays legible against the active
+ * theme background. Colors that are too light for light mode get darkened and
+ * colors too dark for dark mode get lifted, while well-contrasted accent colors
+ * pass through untouched.
+ */
+export function adaptColorForMode(color: string, mode: 'light' | 'dark'): string {
+  if (!color || typeof color !== 'string' || !color.startsWith('#') || color.length !== 7) {
+    return color;
+  }
+  const n = parseInt(color.slice(1), 16);
+  const r = n >> 16;
+  const g = (n >> 8) & 0x00ff;
+  const b = n & 0x0000ff;
+  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+  if (mode === 'light' && luminance > 180) {
+    const f = 0.45;
+    return `#${toHex(r * f)}${toHex(g * f)}${toHex(b * f)}`;
+  }
+  if (mode === 'dark' && luminance < 75) {
+    const f = (255 - 90) / 255;
+    return `#${toHex(r + (255 - r) * f)}${toHex(g + (255 - g) * f)}${toHex(b + (255 - b) * f)}`;
+  }
+  return color;
 }
 
 export function toggleTargetNode(
