@@ -5,6 +5,27 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$ROOT_DIR/ports.conf"
 export BACKEND_PORT FRONTEND_PORT
 
+# --- Optional .env for local config (Mode A: scan another repo as root) ---
+# Create a .env in this directory (see .env.example) and set SWARM_DEBUG_ROOT
+# to point the debugger at a different repo. The .env is gitignored and only
+# affects local runs.
+if [ -f "$ROOT_DIR/.env" ]; then
+    set -a
+    source "$ROOT_DIR/.env"
+    set +a
+fi
+
+if [ -n "${SWARM_DEBUG_ROOT:-}" ]; then
+    if [ ! -d "$SWARM_DEBUG_ROOT" ]; then
+        echo "ERROR: SWARM_DEBUG_ROOT='$SWARM_DEBUG_ROOT' is not a directory."
+        exit 1
+    fi
+    SWARM_DEBUG_ROOT="$(cd "$SWARM_DEBUG_ROOT" && pwd)"
+    export SWARM_DEBUG_ROOT
+    echo "Scanning external repo as root: $SWARM_DEBUG_ROOT"
+    echo ""
+fi
+
 cleanup() {
     echo ""
     echo "Shutting down all processes..."

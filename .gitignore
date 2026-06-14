@@ -19,6 +19,9 @@ backend/log_mode.txt
 *.tar.gz
 *.whl
 
+# Local env (keep .env.example tracked)
+.env
+
 # IDE
 .idea/
 *.swp

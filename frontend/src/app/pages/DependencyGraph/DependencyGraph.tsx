@@ -146,20 +146,32 @@ const DependencyGraph: React.FC = () => {
       style: buildGraphStyle(GRAPH_THEME[mode]),
       wheelSensitivity: 0.2,
     });
+    // Promote the most-recently-interacted node (or its whole group, for a
+    // compound card) above every other element and keep it there. A bumped
+    // z-index orders peers at the same compound depth; lifting the group's
+    // z-compound-depth to 'top' is what lets a card sit above other cards'
+    // children (which otherwise always paint above any parent box).
+    let zTop = 1;
+    let activeGroup: cytoscape.NodeCollection | null = null;
+    const bringToFront = (n: cytoscape.NodeSingular) => {
+      const root = n.isChild() ? n.parent().first() : n;
+      const grp = root.isParent() ? root.union(root.descendants()) : root;
+      zTop += 1;
+      activeGroup?.style('z-compound-depth', 'auto');
+      grp.style({ 'z-index': zTop, 'z-compound-depth': 'top' });
+      activeGroup = grp;
+    };
     cy.on('tap', 'node', (e) => {
       const n = e.target as cytoscape.NodeSingular;
+      bringToFront(n);
       if (n.data('isParent')) return;
       handlersRef.current.onNodeTap(n);
     });
     cy.on('tap', (e) => {
       if (e.target === cy) handlersRef.current.onBgTap();
     });
-    let zTop = 1;
     cy.on('grab', 'node', (e) => {
-      const n = e.target as cytoscape.NodeSingular;
-      zTop += 1;
-      const grp = n.isParent() ? n.union(n.descendants()) : n;
-      grp.style('z-index', zTop);
+      bringToFront(e.target as cytoscape.NodeSingular);
     });
     cyRef.current = cy;
     return () => {

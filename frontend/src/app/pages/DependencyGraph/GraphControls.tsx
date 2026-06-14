@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
@@ -31,8 +31,64 @@ interface Props {
   layoutDisabled: (l: LayoutName) => boolean;
 }
 
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 460;
+const DEFAULT_WIDTH = 232;
+const WIDTH_STORAGE_KEY = 'depgraph-sidebar-width';
+
 const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisabled }) => {
   const c = useClaudeTokens();
+
+  const [width, setWidth] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
+      if (saved >= MIN_WIDTH && saved <= MAX_WIDTH) return saved;
+    } catch {
+      /* ignore */
+    }
+    return DEFAULT_WIDTH;
+  });
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef(false);
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
+
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = true;
+    setDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const left = sidebarRef.current?.getBoundingClientRect().left ?? 0;
+      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX - left));
+      setWidth(next);
+    };
+    const onUp = () => {
+      dragRef.current = false;
+      setDragging(false);
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [dragging]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WIDTH_STORAGE_KEY, String(width));
+    } catch {
+      /* ignore */
+    }
+  }, [width]);
 
   const labelSx = {
     fontSize: '0.6rem',
@@ -110,15 +166,39 @@ const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisable
 
   return (
     <Box
+      ref={sidebarRef}
       sx={{
-        flex: '0 0 232px',
+        flex: `0 0 ${width}px`,
+        width: `${width}px`,
+        position: 'relative',
         borderRight: `1px solid ${c.border.subtle}`,
         bgcolor: c.bg.surface,
-        overflowY: 'auto',
         minHeight: 0,
         height: '100%',
       }}
     >
+      <Box
+        sx={{
+          height: '100%',
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          scrollbarWidth: 'thin',
+          scrollbarColor: `${c.border.strong} transparent`,
+          '&::-webkit-scrollbar': { width: 10 },
+          '&::-webkit-scrollbar-track': { background: 'transparent' },
+          '&::-webkit-scrollbar-thumb': {
+            backgroundColor: c.border.strong,
+            borderRadius: `${c.radius.full}px`,
+            border: '2px solid transparent',
+            backgroundClip: 'padding-box',
+            transition: c.transition,
+          },
+          '&::-webkit-scrollbar-thumb:hover': {
+            backgroundColor: c.accent.primary,
+            backgroundClip: 'padding-box',
+          },
+        }}
+      >
       {renderSection(
         'View',
         renderSegmented(
@@ -207,7 +287,34 @@ const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisable
         </Box>,
       )}
 
-      {stats && renderSection('Project stats', <GraphStats stats={stats} />)}
+        {stats && renderSection('Project stats', <GraphStats stats={stats} />)}
+      </Box>
+
+      <Box
+        onMouseDown={startResize}
+        onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
+        title="Drag to resize · double-click to reset"
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          width: 6,
+          height: '100%',
+          cursor: 'col-resize',
+          zIndex: 5,
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 2,
+            height: '100%',
+            backgroundColor: dragging ? c.accent.primary : 'transparent',
+            transition: c.transition,
+          },
+          '&:hover::after': { backgroundColor: c.accent.primary },
+        }}
+      />
     </Box>
   );
 };
