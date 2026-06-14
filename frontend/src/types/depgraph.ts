@@ -8,6 +8,9 @@ export interface GraphNodeData {
   parent?: string;
   isParent?: boolean;
   isExt?: boolean;
+  // root-relative POSIX file path (file view leaves only); join key with the
+  // debugger tree, whose file ids are `root/<path>`.
+  path?: string;
   // assigned client-side
   color?: string;
   pad?: number;
@@ -55,12 +58,16 @@ export type GraphView = 'file' | 'pkg';
 export type ColorMode = 'pkg' | 'inst';
 export type FilterMode = 'all' | 'single' | 'orphan' | 'leaf' | 'hub';
 export type LayoutName = 'dagre' | 'fcose' | 'concentric';
-export type OverlayMode = 'none' | 'violations' | 'cycles';
+export type OverlayMode = 'none' | 'violations' | 'cycles' | 'coverage';
+
+/** Whether a graph node's file has debug output enabled, disabled, or no `debug()` calls at all. */
+export type DebugState = 'on' | 'off' | 'none';
 export type HighlightMode = 'direct' | 'transitive';
 
 export interface InspectorData {
   id: string;
   label: string;
+  path?: string;
   pkg: string;
   layer: string;
   indeg: number;

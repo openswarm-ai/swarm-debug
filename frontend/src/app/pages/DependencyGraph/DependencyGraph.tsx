@@ -10,7 +10,10 @@ import { motion } from 'framer-motion';
 import { useClaudeTokens, useThemeMode } from '@/shared/styles/ThemeContext';
 import { useAppDispatch, useAppSelector } from '@/shared/hooks';
 import { scanGraph } from '@/shared/state/depgraphSlice';
-import { InspectorData, LayoutName } from '@/types/depgraph';
+import { checkboxChange, pullWithRetry, pushStructure } from '@/shared/state/debuggerSlice';
+import { buildDebugStateMap } from '@/shared/state/treeUtils';
+import { EVENTS_URL } from '@/shared/state/API_ENDPOINTS';
+import { DebugState, InspectorData, LayoutName } from '@/types/depgraph';
 import GraphControls, { ControlsState } from '@/app/pages/DependencyGraph/GraphControls';
 import GraphInspector from '@/app/pages/DependencyGraph/GraphInspector';
 import {
@@ -43,12 +46,15 @@ const DependencyGraph: React.FC = () => {
   const data = useAppSelector((s) => s.depgraph.data);
   const loading = useAppSelector((s) => s.depgraph.loading);
   const error = useAppSelector((s) => s.depgraph.error);
+  const projectStructure = useAppSelector((s) => s.debugger.projectStructure);
+  const debuggerDirty = useAppSelector((s) => s.debugger.dirty);
 
   const [controls, setControls] = useState<ControlsState>(DEFAULT_CONTROLS);
   const [inspector, setInspector] = useState<InspectorData | null>(null);
   const [meta, setMeta] = useState('');
   const [search, setSearch] = useState('');
   const [pathArmed, setPathArmed] = useState(false);
+  const [pathTargets, setPathTargets] = useState<string[]>([]);
 
   const cyRef = useRef<cytoscape.Core | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -56,6 +62,17 @@ const DependencyGraph: React.FC = () => {
   const pathSrcRef = useRef<cytoscape.NodeSingular | null>(null);
   const controlsRef = useRef(controls);
   const pkgColorMapRef = useRef<Record<string, string>>({});
+
+  // relPath -> is_toggled for every instrumented file. `instrumentedSet` is the
+  // set of files that call debug() at all; `toggledPaths` only those currently on.
+  const debugStateMap = useMemo(() => buildDebugStateMap(projectStructure), [projectStructure]);
+  const instrumentedSet = useMemo(() => new Set(Object.keys(debugStateMap)), [debugStateMap]);
+  const toggledPaths = useMemo(
+    () => new Set(Object.keys(debugStateMap).filter((p) => debugStateMap[p])),
+    [debugStateMap],
+  );
+  const toggledPathsRef = useRef(toggledPaths);
+  const instrumentedSetRef = useRef(instrumentedSet);
 
   const pkgColorMap = useMemo(() => {
     if (!data) return {};
@@ -66,6 +83,32 @@ const DependencyGraph: React.FC = () => {
   useEffect(() => {
     if (!data && !loading) dispatch(scanGraph());
   }, [data, loading, dispatch]);
+
+  // The debugger file tree drives the coverage overlay and debug-toggle actions.
+  // Load it on mount if no other page has yet (the store is app-global, so this
+  // is a no-op when the Debugger page already populated it).
+  useEffect(() => {
+    if (!projectStructure) dispatch(pullWithRetry());
+  }, [projectStructure, dispatch]);
+
+  // Keep coverage live when toggles change elsewhere (CLI, Debugger page).
+  const debuggerDirtyRef = useRef(debuggerDirty);
+  useEffect(() => {
+    debuggerDirtyRef.current = debuggerDirty;
+  }, [debuggerDirty]);
+  useEffect(() => {
+    const es = new EventSource(EVENTS_URL);
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    es.onmessage = () => {
+      if (debuggerDirtyRef.current) return;
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => dispatch(pullWithRetry()), 500);
+    };
+    return () => {
+      es.close();
+      if (debounce) clearTimeout(debounce);
+    };
+  }, [dispatch]);
 
   const update = useCallback((partial: Partial<ControlsState>) => {
     setControls((prev) => {
@@ -93,6 +136,7 @@ const DependencyGraph: React.FC = () => {
     const o = controlsRef.current.overlay;
     if (o === 'violations') setMeta(ops.showViolations(cy));
     else if (o === 'cycles') setMeta(ops.showCycles(cy));
+    else if (o === 'coverage') setMeta(ops.showCoverage(cy, toggledPathsRef.current));
   }, []);
 
   // Node tap / background tap delegate through a ref so the listener (bound
@@ -106,6 +150,8 @@ const DependencyGraph: React.FC = () => {
   useEffect(() => {
     controlsRef.current = controls;
     pkgColorMapRef.current = pkgColorMap;
+    toggledPathsRef.current = toggledPaths;
+    instrumentedSetRef.current = instrumentedSet;
     handlersRef.current.onNodeTap = (n: cytoscape.NodeSingular) => {
       const cy = cyRef.current;
       if (!cy) return;
@@ -114,10 +160,12 @@ const DependencyGraph: React.FC = () => {
           pathSrcRef.current = n;
           ops.clearHighlight(cy);
           cy.elements().addClass('faded');
+          n.ancestors().removeClass('faded');
           n.removeClass('faded').addClass('hl-node');
           setMeta('path: now click the TARGET node');
         } else {
           setMeta(ops.showPath(cy, pathSrcRef.current, n));
+          setPathTargets(ops.instrumentablePaths(cy.nodes('.path-el'), instrumentedSetRef.current));
           pathSrcRef.current = null;
           pathModeRef.current = false;
           setPathArmed(false);
@@ -132,6 +180,7 @@ const DependencyGraph: React.FC = () => {
       if (!cy || pathModeRef.current) return;
       ops.clearHighlight(cy);
       setInspector(null);
+      setPathTargets([]);
       setMeta(ops.computeMeta(cy));
       reapplyOverlay(cy);
     };
@@ -245,12 +294,13 @@ const DependencyGraph: React.FC = () => {
     if (!cy || !data) return;
     if (controls.overlay === 'violations') setMeta(ops.showViolations(cy));
     else if (controls.overlay === 'cycles') setMeta(ops.showCycles(cy));
+    else if (controls.overlay === 'coverage') setMeta(ops.showCoverage(cy, toggledPaths));
     else {
       ops.clearHighlight(cy);
       setMeta(ops.computeMeta(cy));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [controls.overlay]);
+  }, [controls.overlay, toggledPaths]);
 
   // --- Search -----------------------------------------------------------------
   useEffect(() => {
@@ -276,12 +326,45 @@ const DependencyGraph: React.FC = () => {
       pathModeRef.current = true;
       pathSrcRef.current = n;
       setPathArmed(true);
+      setPathTargets([]);
       setInspector(null);
       ops.clearHighlight(cy);
       cy.elements().addClass('faded');
+      n.ancestors().removeClass('faded');
       n.removeClass('faded').addClass('hl-node');
       setMeta('path: now click the TARGET node');
     });
+
+  // --- Debug instrumentation (writes to the debugger config) -----------------
+  const applyDebugToggles = useCallback(
+    (relPaths: string[], checked: boolean) => {
+      if (relPaths.length === 0) return;
+      relPaths.forEach((p) => dispatch(checkboxChange({ nodeId: `root/${p}`, checked })));
+      dispatch(pushStructure());
+    },
+    [dispatch],
+  );
+
+  const inspectorDebugState: DebugState =
+    inspector?.path && instrumentedSet.has(inspector.path)
+      ? toggledPaths.has(inspector.path)
+        ? 'on'
+        : 'off'
+      : 'none';
+
+  const onDebugToggle = () => {
+    if (!inspector?.path || !instrumentedSet.has(inspector.path)) return;
+    applyDebugToggles([inspector.path], !toggledPaths.has(inspector.path));
+  };
+  const onDebugImports = () =>
+    withNode((_cy, n) =>
+      applyDebugToggles(ops.instrumentablePaths(n.union(n.successors()).nodes(), instrumentedSetRef.current), true),
+    );
+  const onDebugImporters = () =>
+    withNode((_cy, n) =>
+      applyDebugToggles(ops.instrumentablePaths(n.union(n.predecessors()).nodes(), instrumentedSetRef.current), true),
+    );
+  const onInstrumentPath = () => applyDebugToggles(pathTargets, true);
   const onClearAll = () => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -290,6 +373,7 @@ const DependencyGraph: React.FC = () => {
     ops.applyFilter(cy, controlsRef.current.filter);
     ops.applyEdgeFilters(cy, controlsRef.current.crossOnly);
     setInspector(null);
+    setPathTargets([]);
     ops.runLayout(cy, controlsRef.current.layoutName);
     setMeta(ops.computeMeta(cy));
     reapplyOverlay(cy);
@@ -341,6 +425,25 @@ const DependencyGraph: React.FC = () => {
           }}
         />
         <Typography sx={{ fontSize: '0.75rem', color: pathArmed ? c.accent.primary : c.text.tertiary }}>{meta}</Typography>
+        {pathTargets.length > 0 && (
+          <Button
+            size="small"
+            onClick={onInstrumentPath}
+            sx={{
+              px: 1.25,
+              height: 26,
+              bgcolor: c.status.successBg,
+              color: c.status.success,
+              border: `1px solid ${c.status.success}`,
+              textTransform: 'none',
+              fontSize: '0.72rem',
+              borderRadius: `${c.radius.md}px`,
+              '&:hover': { bgcolor: `${c.status.success}29` },
+            }}
+          >
+            Enable debug on path ({pathTargets.length})
+          </Button>
+        )}
         <Box sx={{ flex: 1 }} />
         {data?.root && (
           <Typography sx={{ fontSize: '0.72rem', color: c.text.muted, maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -416,6 +519,7 @@ const DependencyGraph: React.FC = () => {
           >
             <GraphInspector
               node={inspector}
+              debugState={inspectorDebugState}
               onClose={() => {
                 setInspector(null);
                 const cy = cyRef.current;
@@ -429,6 +533,9 @@ const DependencyGraph: React.FC = () => {
               onPath={onPath}
               onClear={onClearAll}
               onFocus={onFocusFromList}
+              onDebugToggle={onDebugToggle}
+              onDebugImports={onDebugImports}
+              onDebugImporters={onDebugImporters}
             />
           </motion.div>
         )}

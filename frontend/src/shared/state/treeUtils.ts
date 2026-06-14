@@ -38,6 +38,31 @@ export function recomputeParentToggles(nodes: TreeNodeData[]): TreeNodeData[] {
   });
 }
 
+/**
+ * Flattens the debugger file tree into a `relPath -> is_toggled` map for every
+ * leaf (file) node, where `relPath` is the project-root-relative POSIX path
+ * (e.g. `swarm_debug/core/scanner.py`). The synthetic top-level `root` node is
+ * stripped so the keys line up with the dependency graph's node `path` field.
+ */
+export function buildDebugStateMap(nodes: TreeNodeData[] | null): Record<string, boolean> {
+  const map: Record<string, boolean> = {};
+  if (!Array.isArray(nodes)) return map;
+
+  const walk = (node: TreeNodeData, parts: string[]): void => {
+    // The single synthetic root wrapper is not part of any file path.
+    const isSyntheticRoot = parts.length === 0 && node.name === 'root';
+    const nextParts = isSyntheticRoot ? [] : [...parts, node.name];
+    if (node.children && node.children.length > 0) {
+      node.children.forEach((child) => walk(child, nextParts));
+    } else if (nextParts.length > 0) {
+      map[nextParts.join('/')] = node.is_toggled;
+    }
+  };
+
+  nodes.forEach((node) => walk(node, []));
+  return map;
+}
+
 export function treeFingerprint(nodes: TreeNodeData[] | null): string {
   if (!nodes) return '';
   const normalized = recomputeParentToggles(nodes);

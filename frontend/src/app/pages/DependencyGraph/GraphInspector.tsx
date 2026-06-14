@@ -4,19 +4,35 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import CloseIcon from '@mui/icons-material/Close';
 import { useClaudeTokens } from '@/shared/styles/ThemeContext';
-import { InspectorData } from '@/types/depgraph';
+import { DebugState, InspectorData } from '@/types/depgraph';
 
 interface Props {
   node: InspectorData;
+  debugState: DebugState;
   onClose: () => void;
   onBlast: () => void;
   onIsolate: () => void;
   onPath: () => void;
   onClear: () => void;
   onFocus: (id: string) => void;
+  onDebugToggle: () => void;
+  onDebugImports: () => void;
+  onDebugImporters: () => void;
 }
 
-const GraphInspector: React.FC<Props> = ({ node, onClose, onBlast, onIsolate, onPath, onClear, onFocus }) => {
+const GraphInspector: React.FC<Props> = ({
+  node,
+  debugState,
+  onClose,
+  onBlast,
+  onIsolate,
+  onPath,
+  onClear,
+  onFocus,
+  onDebugToggle,
+  onDebugImports,
+  onDebugImporters,
+}) => {
   const c = useClaudeTokens();
 
   const renderMeta = (k: string, v: string | number) => (
@@ -133,6 +149,63 @@ const GraphInspector: React.FC<Props> = ({ node, onClose, onBlast, onIsolate, on
             <Box component="button" onClick={onPath} sx={actionBtnSx}>Trace path…</Box>
             <Box component="button" onClick={onIsolate} sx={actionBtnSx}>Isolate</Box>
             <Box component="button" onClick={onClear} sx={actionBtnSx}>Clear</Box>
+          </Box>
+        )}
+
+        {!node.isExt && (
+          <Box sx={{ mt: 1.75, pt: 1.25, borderTop: `1px solid ${c.border.subtle}` }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+              <Typography sx={{ fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: c.text.muted }}>
+                Debug output
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Box
+                  sx={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    bgcolor: debugState === 'on' ? c.status.success : debugState === 'off' ? c.text.muted : 'transparent',
+                    border: debugState === 'none' ? `1px solid ${c.border.strong}` : 'none',
+                  }}
+                />
+                <Typography sx={{ fontSize: '0.68rem', color: c.text.tertiary }}>
+                  {debugState === 'on' ? 'on' : debugState === 'off' ? 'off' : 'no debug() calls'}
+                </Typography>
+              </Box>
+            </Box>
+
+            {debugState === 'none' ? (
+              <Typography sx={{ fontSize: '0.68rem', color: c.text.muted, lineHeight: 1.5 }}>
+                This file has no <code>debug()</code> calls, so there is nothing to toggle.
+              </Typography>
+            ) : (
+              <>
+                <Box
+                  component="button"
+                  onClick={onDebugToggle}
+                  sx={{
+                    ...actionBtnSx,
+                    width: '100%',
+                    py: 0.7,
+                    fontWeight: 600,
+                    bgcolor: debugState === 'on' ? `${c.status.success}1f` : c.bg.surface,
+                    borderColor: debugState === 'on' ? c.status.success : c.border.strong,
+                    color: debugState === 'on' ? c.status.success : c.text.primary,
+                    '&:hover': { bgcolor: debugState === 'on' ? `${c.status.success}33` : c.bg.elevated },
+                  }}
+                >
+                  {debugState === 'on' ? 'Turn debug OFF' : 'Turn debug ON'}
+                </Box>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75, mt: 0.75 }}>
+                  <Box component="button" onClick={onDebugImports} sx={actionBtnSx} title="Enable debug for this file and everything it imports">
+                    ON + imports
+                  </Box>
+                  <Box component="button" onClick={onDebugImporters} sx={actionBtnSx} title="Enable debug for this file and everything that imports it">
+                    ON + importers
+                  </Box>
+                </Box>
+              </>
+            )}
           </Box>
         )}
 

@@ -34,7 +34,7 @@ export function assignVisuals(cy: cytoscape.Core, colorMode: ColorMode, pkgColor
 }
 
 export function clearHighlight(cy: cytoscape.Core): void {
-  cy.elements().removeClass('faded hl-node hl-in hl-out violation cycle-el path-el');
+  cy.elements().removeClass('faded hl-node hl-in hl-out violation cycle-el path-el debug-on');
 }
 
 export function applyFilter(cy: cytoscape.Core, kind: FilterMode): void {
@@ -88,7 +88,8 @@ export function showViolations(cy: cytoscape.Core): string {
   const bad = cy.edges().filter((e) => e.data('violation') && e.visible());
   if (bad.length === 0) return 'no layer violations in view';
   cy.elements().addClass('faded');
-  bad.union(bad.connectedNodes()).removeClass('faded');
+  const keep = bad.union(bad.connectedNodes());
+  keep.union(keep.ancestors()).removeClass('faded');
   bad.addClass('violation');
   return `${bad.length} layer violation${bad.length > 1 ? 's' : ''} (dependency pointing up)`;
 }
@@ -99,11 +100,31 @@ export function showCycles(cy: cytoscape.Core): string {
   if (loop.length === 0) return 'no import cycles in view';
   const nodes = loop.connectedNodes();
   cy.elements().addClass('faded');
-  loop.union(nodes).removeClass('faded');
+  const keep = loop.union(nodes);
+  keep.union(keep.ancestors()).removeClass('faded');
   loop.addClass('cycle-el');
   nodes.addClass('cycle-el');
   const groups = new Set(nodes.map((n) => n.data('scc')));
   return `${groups.size} import cycle${groups.size > 1 ? 's' : ''} (${nodes.length} modules)`;
+}
+
+/** Highlight every in-view file whose debug output is currently toggled ON. */
+export function showCoverage(cy: cytoscape.Core, toggledPaths: Set<string>): string {
+  clearHighlight(cy);
+  const leaves = cy.nodes('[!isParent]').filter(':visible');
+  const instrumentable = leaves.filter((n) => !!n.data('path'));
+  const on = instrumentable.filter((n) => toggledPaths.has(String(n.data('path'))));
+  if (on.length === 0) {
+    return instrumentable.length === 0
+      ? 'no instrumentable files in view'
+      : 'no debug output enabled in view';
+  }
+  cy.elements().addClass('faded');
+  on.union(on.ancestors()).removeClass('faded');
+  on.addClass('debug-on');
+  // Emphasize edges connecting two instrumented-and-on files (the live subgraph).
+  on.edgesWith(on).removeClass('faded').addClass('debug-on');
+  return `${on.length} of ${instrumentable.length} file${instrumentable.length > 1 ? 's' : ''} emitting debug output`;
 }
 
 export function applyNodeHighlight(cy: cytoscape.Core, n: cytoscape.NodeSingular, transitive: boolean): void {
@@ -112,7 +133,7 @@ export function applyNodeHighlight(cy: cytoscape.Core, n: cytoscape.NodeSingular
   const out = transitive ? n.successors() : n.outgoers();
   const keep = n.union(inc).union(out);
   cy.elements().addClass('faded');
-  keep.removeClass('faded');
+  keep.union(keep.ancestors()).removeClass('faded');
   n.addClass('hl-node');
   inc.edges().addClass('hl-in');
   out.edges().addClass('hl-out');
@@ -123,9 +144,12 @@ export function showPath(cy: cytoscape.Core, src: cytoscape.NodeSingular, dst: c
   clearHighlight(cy);
   cy.elements().addClass('faded');
   if (!res.found) {
-    src.union(dst).removeClass('faded').addClass('hl-node');
+    const ends = src.union(dst);
+    ends.ancestors().removeClass('faded');
+    ends.removeClass('faded').addClass('hl-node');
     return `no path: ${src.data('label')} \u2192 ${dst.data('label')}`;
   }
+  res.path.ancestors().removeClass('faded');
   res.path.removeClass('faded hidden').addClass('path-el');
   return `path: ${src.data('label')} \u2192 ${dst.data('label')} (${res.path.edges().length} hops)`;
 }
@@ -149,8 +173,22 @@ export function applySearch(cy: cytoscape.Core, query: string): void {
   if (matched.length === 0) return;
   cy.elements().addClass('faded');
   const keep = matched.union(matched.connectedEdges()).union(matched.connectedEdges().connectedNodes());
-  keep.removeClass('faded');
+  keep.union(keep.ancestors()).removeClass('faded');
   matched.addClass('hl-node');
+}
+
+/**
+ * Root-relative file paths for every node in `coll` whose file actually calls
+ * `debug()` (i.e. is present in `instrumented`). Used to bulk-toggle debug
+ * output across a dependency closure or traced path.
+ */
+export function instrumentablePaths(coll: cytoscape.NodeCollection, instrumented: Set<string>): string[] {
+  const out: string[] = [];
+  coll.forEach((n) => {
+    const p = n.data('path');
+    if (p && instrumented.has(String(p))) out.push(String(p));
+  });
+  return Array.from(new Set(out));
 }
 
 export function buildInspectorData(n: cytoscape.NodeSingular, layers: Record<string, number>): InspectorData {
@@ -169,6 +207,7 @@ export function buildInspectorData(n: cytoscape.NodeSingular, layers: Record<str
   return {
     id: n.id(),
     label: String(n.data('label')),
+    path: n.data('path') ? String(n.data('path')) : undefined,
     pkg,
     layer,
     indeg,

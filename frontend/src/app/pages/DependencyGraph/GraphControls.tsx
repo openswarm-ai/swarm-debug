@@ -257,6 +257,7 @@ const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisable
               { val: 'none' as OverlayMode, label: 'None' },
               { val: 'violations' as OverlayMode, label: 'Violations' },
               { val: 'cycles' as OverlayMode, label: 'Cycles' },
+              { val: 'coverage' as OverlayMode, label: 'Debug' },
             ],
             (v) => update({ overlay: v }),
           )}

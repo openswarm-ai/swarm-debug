@@ -37,6 +37,8 @@ export interface GraphTheme {
   path: string;
   pathText: string;
   pathBorder: string;
+  debugOn: string;
+  debugOnEdge: string;
 }
 
 export const GRAPH_THEME: Record<'light' | 'dark', GraphTheme> = {
@@ -64,6 +66,8 @@ export const GRAPH_THEME: Record<'light' | 'dark', GraphTheme> = {
     path: 'rgb(138,111,176)',
     pathText: 'rgb(255,255,255)',
     pathBorder: 'rgb(111,87,154)',
+    debugOn: 'rgb(46,160,103)',
+    debugOnEdge: 'rgb(58,157,142)',
   },
   dark: {
     canvas: 'rgb(31,30,29)',
@@ -89,6 +93,8 @@ export const GRAPH_THEME: Record<'light' | 'dark', GraphTheme> = {
     path: 'rgb(169,143,208)',
     pathText: 'rgb(26,24,21)',
     pathBorder: 'rgb(194,174,230)',
+    debugOn: 'rgb(82,196,138)',
+    debugOnEdge: 'rgb(105,176,160)',
   },
 };
 
@@ -109,6 +115,12 @@ export function buildGraphStyle(t: GraphTheme): cytoscape.StylesheetStyle[] {
         height: 'label',
         padding: 'data(pad)',
         'text-wrap': 'wrap',
+        // Order nodes purely by z-index (not the default "nodes always above
+        // edges" rule). Compound nesting depth still keeps children above their
+        // parent cards, and normal edges stay beneath via z-compound-depth:
+        // 'bottom' — but this lets highlighted edges (z-index 9999, depth 'top')
+        // paint above a card that bringToFront() has promoted to 'top'.
+        'z-index-compare': 'manual',
       },
     },
     {
@@ -161,17 +173,31 @@ export function buildGraphStyle(t: GraphTheme): cytoscape.StylesheetStyle[] {
       selector: '.hl-node',
       style: { 'background-color': t.hlBg, color: t.hlText, 'border-color': t.hlBorder, 'border-width': 2 },
     },
-    { selector: '.hl-in', style: { 'line-color': t.inEdge, 'target-arrow-color': t.inEdge, width: 2 } },
-    { selector: '.hl-out', style: { 'line-color': t.outEdge, 'target-arrow-color': t.outEdge, width: 2 } },
+    { selector: '.hl-in', style: { 'line-color': t.inEdge, 'target-arrow-color': t.inEdge, width: 2, 'z-compound-depth': 'top', 'z-index': 9999, 'z-index-compare': 'manual' } },
+    { selector: '.hl-out', style: { 'line-color': t.outEdge, 'target-arrow-color': t.outEdge, width: 2, 'z-compound-depth': 'top', 'z-index': 9999, 'z-index-compare': 'manual' } },
     {
       selector: 'edge.violation',
-      style: { 'line-color': t.violation, 'target-arrow-color': t.violation, width: 3, 'line-style': 'dashed' },
+      style: { 'line-color': t.violation, 'target-arrow-color': t.violation, width: 3, 'line-style': 'dashed', 'z-compound-depth': 'top', 'z-index': 9999, 'z-index-compare': 'manual' },
     },
     {
       selector: 'edge.cycle-el',
-      style: { 'line-color': t.cycle, 'target-arrow-color': t.cycle, width: 3, 'line-style': 'dashed' },
+      style: { 'line-color': t.cycle, 'target-arrow-color': t.cycle, width: 3, 'line-style': 'dashed', 'z-compound-depth': 'top', 'z-index': 9999, 'z-index-compare': 'manual' },
     },
     { selector: 'node.cycle-el', style: { 'border-color': t.cycle, 'border-width': 3 } },
+    {
+      selector: 'node.debug-on',
+      style: {
+        'border-color': t.debugOn,
+        'border-width': 3,
+        'underlay-color': t.debugOn,
+        'underlay-opacity': 0.25,
+        'underlay-padding': 6,
+      },
+    },
+    {
+      selector: 'edge.debug-on',
+      style: { 'line-color': t.debugOnEdge, 'target-arrow-color': t.debugOnEdge, width: 2.5, 'z-compound-depth': 'top', 'z-index': 9999, 'z-index-compare': 'manual' },
+    },
     {
       selector: '.path-el',
       style: {
@@ -181,6 +207,7 @@ export function buildGraphStyle(t: GraphTheme): cytoscape.StylesheetStyle[] {
         'background-color': t.path,
         color: t.pathText,
         'border-color': t.pathBorder,
+        'z-compound-depth': 'top', 'z-index': 9999, 'z-index-compare': 'manual',
       },
     },
   ];

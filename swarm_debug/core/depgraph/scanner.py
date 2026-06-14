@@ -201,8 +201,16 @@ def layer_rank(pkg_path: str, layers: Dict[str, int]) -> int:
     return layers.get(pkg_path.split("/")[0], max(layers.values(), default=0) + 1)
 
 
-def to_elements(edges, grouped: bool, layers: Dict[str, int]) -> List[dict]:
-    """Build Cytoscape elements (nodes + edges) from an adjacency map."""
+def to_elements(
+    edges, grouped: bool, layers: Dict[str, int], paths: Optional[Dict[str, str]] = None
+) -> List[dict]:
+    """Build Cytoscape elements (nodes + edges) from an adjacency map.
+
+    ``paths`` optionally maps a module name to its root-relative POSIX file path
+    (only meaningful for the ungrouped file view). When supplied, each leaf node
+    carries a ``path`` field so the frontend can join graph nodes back to the
+    debugger's file tree (which keys files by ``root/<relpath>``).
+    """
     indeg: Dict[str, int] = {}
     outdeg: Dict[str, int] = {}
     all_nodes: Set[str] = set(edges)
@@ -233,6 +241,8 @@ def to_elements(edges, grouped: bool, layers: Dict[str, int]) -> List[dict]:
         }
         if not grouped:
             data["parent"] = package_of(node_id)
+            if paths and node_id in paths:
+                data["path"] = paths[node_id]
         nodes[node_id] = {"data": data}
 
     parents: Dict[str, dict] = {}
@@ -367,8 +377,11 @@ def scan_root(root: str, layers: Optional[Dict[str, int]] = None) -> dict:
     pkg_edges = build_package_edges(file_edges)
     stats = compute_stats(file_edges, ext_edges, layers)
 
+    # module name -> root-relative POSIX path, the join key with the debugger tree.
+    rel_paths = {mod: p.relative_to(root_path).as_posix() for mod, p in module_map.items()}
+
     return {
-        "fileElements": to_elements(file_edges, grouped=False, layers=layers),
+        "fileElements": to_elements(file_edges, grouped=False, layers=layers, paths=rel_paths),
         "pkgElements": to_elements(
             {k: sorted(v) for k, v in pkg_edges.items()}, grouped=True, layers=layers
         ),
