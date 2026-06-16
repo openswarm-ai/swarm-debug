@@ -6,12 +6,15 @@ import GraphStats from '@/app/pages/DependencyGraph/GraphStats';
 import {
   ColorMode,
   FilterMode,
+  FilterTab,
   GraphStats as Stats,
   GraphView,
   HighlightMode,
   LayoutName,
   OverlayMode,
+  PathFilter,
 } from '@/types/depgraph';
+import PathFilterPanel from '@/app/pages/DependencyGraph/PathFilterPanel';
 
 export interface ControlsState {
   view: GraphView;
@@ -22,6 +25,8 @@ export interface ControlsState {
   overlay: OverlayMode;
   hlMode: HighlightMode;
   layoutName: LayoutName;
+  filterTab: FilterTab;
+  pathFilter: PathFilter;
 }
 
 interface Props {
@@ -246,6 +251,16 @@ const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisable
           </Box>
           {renderCheckbox(controls.crossOnly, (b) => update({ crossOnly: b }), 'Cross-package edges only')}
         </>,
+      )}
+
+      {renderSection(
+        'Filter paths',
+        <PathFilterPanel
+          tab={controls.filterTab}
+          pathFilter={controls.pathFilter}
+          onTabChange={(t) => update({ filterTab: t })}
+          onChange={(pf) => update({ pathFilter: pf })}
+        />,
       )}
 
       {renderSection(

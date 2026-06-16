@@ -7,8 +7,10 @@ import {
   GraphView,
   InspectorData,
   LayoutName,
+  PathFilter,
 } from '@/types/depgraph';
 import { instColor, instability, LAYOUTS, layerOf } from './cyConfig';
+import { isPathFilterEmpty, makePathMatcher } from './glob';
 
 /** Fresh, mutable element copies (redux state is frozen; cytoscape mutates). */
 export function currentElements(data: GraphPayload, view: GraphView, extOn: boolean): cytoscape.ElementDefinition[] {
@@ -37,35 +39,70 @@ export function clearHighlight(cy: cytoscape.Core): void {
   cy.elements().removeClass('faded hl-node hl-in hl-out violation cycle-el path-el debug-on');
 }
 
-export function applyFilter(cy: cytoscape.Core, kind: FilterMode): void {
-  const leaves = cy.nodes('[!isParent]');
-  cy.elements().removeClass('hidden');
-  if (kind === 'all') return;
-  let visible: cytoscape.NodeCollection;
-  if (kind === 'single') visible = leaves.filter((n) => n.data('indeg') === 1);
-  else if (kind === 'orphan') visible = leaves.filter((n) => n.data('indeg') === 0);
-  else if (kind === 'leaf') visible = leaves.filter((n) => n.data('outdeg') === 0);
-  else if (kind === 'hub') {
+/** Leaves surviving the degree-based `filter` dropdown. */
+function degreeVisible(leaves: cytoscape.NodeCollection, kind: FilterMode): cytoscape.NodeCollection {
+  if (kind === 'single') return leaves.filter((n) => n.data('indeg') === 1);
+  if (kind === 'orphan') return leaves.filter((n) => n.data('indeg') === 0);
+  if (kind === 'leaf') return leaves.filter((n) => n.data('outdeg') === 0);
+  if (kind === 'hub') {
     let maxIn = 0;
     leaves.forEach((n) => {
       maxIn = Math.max(maxIn, n.data('indeg'));
     });
     const thr = Math.max(2, Math.ceil(maxIn * 0.5));
-    visible = leaves.filter((n) => n.data('indeg') >= thr);
-  } else visible = leaves;
+    return leaves.filter((n) => n.data('indeg') >= thr);
+  }
+  return leaves;
+}
+
+/** Leaves surviving the path include/exclude globs. Externals are exempt (they
+ *  are governed by the External toggle, not the path filter). */
+function pathVisible(
+  leaves: cytoscape.NodeCollection,
+  view: GraphView,
+  pathFilter: PathFilter,
+): cytoscape.NodeCollection {
+  if (isPathFilterEmpty(pathFilter.include, pathFilter.exclude)) return leaves;
+  const match = makePathMatcher(pathFilter.include, pathFilter.exclude);
+  let visible = leaves.filter((n) => {
+    if (n.data('isExt')) return true;
+    const key = view === 'file' ? n.data('path') : n.data('id');
+    return key ? match(String(key)) : true;
+  });
+  if (pathFilter.growHops) {
+    const grown = visible.union(visible.incomers('node')).union(visible.outgoers('node'));
+    visible = grown.intersection(leaves);
+  }
+  return visible;
+}
+
+export interface VisibilityOpts {
+  view: GraphView;
+  filter: FilterMode;
+  crossOnly: boolean;
+  pathFilter: PathFilter;
+}
+
+/**
+ * Single source of truth for the `hidden` class. Combines every active filter
+ * dimension (degree filter ∧ path globs ∧ cross-package edges) so the dimensions
+ * never clobber one another, then prunes orphaned edges and empty package boxes.
+ */
+export function recomputeVisibility(cy: cytoscape.Core, opts: VisibilityOpts): void {
+  const leaves = cy.nodes('[!isParent]');
+  cy.elements().removeClass('hidden');
+
+  const visible = degreeVisible(leaves, opts.filter).intersection(
+    pathVisible(leaves, opts.view, opts.pathFilter),
+  );
   leaves.difference(visible).addClass('hidden');
+
   cy.edges().forEach((e) => {
     if (e.source().hasClass('hidden') || e.target().hasClass('hidden')) e.addClass('hidden');
+    else if (opts.crossOnly && e.data('samePkg')) e.addClass('hidden');
   });
   cy.nodes('[?isParent]').forEach((p) => {
     if (p.children().filter((ch) => !ch.hasClass('hidden')).length === 0) p.addClass('hidden');
-  });
-}
-
-export function applyEdgeFilters(cy: cytoscape.Core, crossOnly: boolean): void {
-  if (!crossOnly) return;
-  cy.edges().forEach((e) => {
-    if (e.data('samePkg')) e.addClass('hidden');
   });
 }
 

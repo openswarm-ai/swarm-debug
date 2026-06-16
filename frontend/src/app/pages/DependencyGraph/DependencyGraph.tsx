@@ -36,7 +36,35 @@ const DEFAULT_CONTROLS: ControlsState = {
   overlay: 'none',
   hlMode: 'direct',
   layoutName: 'dagre',
+  filterTab: 'expr',
+  pathFilter: { include: [], exclude: [], growHops: false },
 };
+
+const visibilityOpts = (c: ControlsState): ops.VisibilityOpts => ({
+  view: c.view,
+  filter: c.filter,
+  crossOnly: c.crossOnly,
+  pathFilter: c.pathFilter,
+});
+
+const PATH_FILTER_STORAGE_KEY = 'depgraph-path-filter';
+
+function loadInitialControls(): ControlsState {
+  try {
+    const raw = localStorage.getItem(PATH_FILTER_STORAGE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<ControlsState>;
+      return {
+        ...DEFAULT_CONTROLS,
+        ...(saved.filterTab ? { filterTab: saved.filterTab } : {}),
+        ...(saved.pathFilter ? { pathFilter: { ...DEFAULT_CONTROLS.pathFilter, ...saved.pathFilter } } : {}),
+      };
+    }
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_CONTROLS;
+}
 
 const DependencyGraph: React.FC = () => {
   const c = useClaudeTokens();
@@ -49,7 +77,7 @@ const DependencyGraph: React.FC = () => {
   const projectStructure = useAppSelector((s) => s.debugger.projectStructure);
   const debuggerDirty = useAppSelector((s) => s.debugger.dirty);
 
-  const [controls, setControls] = useState<ControlsState>(DEFAULT_CONTROLS);
+  const [controls, setControls] = useState<ControlsState>(loadInitialControls);
   const [inspector, setInspector] = useState<InspectorData | null>(null);
   const [meta, setMeta] = useState('');
   const [search, setSearch] = useState('');
@@ -118,6 +146,18 @@ const DependencyGraph: React.FC = () => {
       return next;
     });
   }, []);
+
+  // Persist just the path-filter slice (and which tab is open) across reloads.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        PATH_FILTER_STORAGE_KEY,
+        JSON.stringify({ filterTab: controls.filterTab, pathFilter: controls.pathFilter }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [controls.filterTab, controls.pathFilter]);
 
   const layoutDisabled = useCallback(
     (l: LayoutName) => controls.view === 'file' && !LAYOUTS[l].compound,
@@ -241,8 +281,7 @@ const DependencyGraph: React.FC = () => {
     cy.elements().remove();
     cy.add(ops.currentElements(data, controls.view, controls.extOn));
     ops.assignVisuals(cy, controls.colorMode, pkgColorMapRef.current);
-    ops.applyFilter(cy, controls.filter);
-    ops.applyEdgeFilters(cy, controls.crossOnly);
+    ops.recomputeVisibility(cy, visibilityOpts(controls));
     ops.runLayout(cy, controls.layoutName);
     setMeta(ops.computeMeta(cy));
     reapplyOverlay(cy);
@@ -264,18 +303,17 @@ const DependencyGraph: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controls.colorMode]);
 
-  // --- Re-filter on filter / cross change ------------------------------------
+  // --- Re-filter on filter / cross / path-filter change ----------------------
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !data) return;
     ops.clearHighlight(cy);
-    ops.applyFilter(cy, controls.filter);
-    ops.applyEdgeFilters(cy, controls.crossOnly);
+    ops.recomputeVisibility(cy, visibilityOpts(controls));
     ops.runLayout(cy, controls.layoutName);
     setMeta(ops.computeMeta(cy));
     reapplyOverlay(cy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [controls.filter, controls.crossOnly]);
+  }, [controls.filter, controls.crossOnly, controls.pathFilter]);
 
   // --- Re-layout on layout change --------------------------------------------
   useEffect(() => {
@@ -370,8 +408,7 @@ const DependencyGraph: React.FC = () => {
     if (!cy) return;
     ops.clearHighlight(cy);
     cy.elements().removeClass('hidden');
-    ops.applyFilter(cy, controlsRef.current.filter);
-    ops.applyEdgeFilters(cy, controlsRef.current.crossOnly);
+    ops.recomputeVisibility(cy, visibilityOpts(controlsRef.current));
     setInspector(null);
     setPathTargets([]);
     ops.runLayout(cy, controlsRef.current.layoutName);

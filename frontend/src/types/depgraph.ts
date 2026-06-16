@@ -54,6 +54,17 @@ export interface GraphPayload {
   empty: boolean;
 }
 
+export interface PathFilter {
+  // Glob patterns (comma-separated entries allowed). Empty include = match all;
+  // exclude always wins over include.
+  include: string[];
+  exclude: string[];
+  // Expand the matched set by one dependency hop (importers + imports).
+  growHops: boolean;
+}
+
+export type FilterTab = 'expr' | 'picker';
+
 export type GraphView = 'file' | 'pkg';
 export type ColorMode = 'pkg' | 'inst';
 export type FilterMode = 'all' | 'single' | 'orphan' | 'leaf' | 'hub';
