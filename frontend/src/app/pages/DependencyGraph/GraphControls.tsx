@@ -5,6 +5,7 @@ import { useClaudeTokens } from '@/shared/styles/ThemeContext';
 import GraphStats from '@/app/pages/DependencyGraph/GraphStats';
 import {
   ColorMode,
+  EdgeDir,
   FilterMode,
   FilterTab,
   GraphStats as Stats,
@@ -24,6 +25,7 @@ export interface ControlsState {
   filter: FilterMode;
   overlay: OverlayMode;
   hlMode: HighlightMode;
+  hlDir: EdgeDir;
   layoutName: LayoutName;
   filterTab: FilterTab;
   pathFilter: PathFilter;
@@ -285,6 +287,17 @@ const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisable
           >
             <option value="direct">Direct deps</option>
             <option value="transitive">Transitive (blast radius)</option>
+          </Box>
+          <Box sx={{ mt: 1 }}>
+            {renderSegmented(
+              controls.hlDir,
+              [
+                { val: 'both' as EdgeDir, label: 'All' },
+                { val: 'imports' as EdgeDir, label: 'Imports' },
+                { val: 'importedBy' as EdgeDir, label: 'Imported by' },
+              ],
+              (v) => update({ hlDir: v }),
+            )}
           </Box>
         </>,
       )}

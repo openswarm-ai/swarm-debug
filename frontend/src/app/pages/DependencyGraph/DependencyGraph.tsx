@@ -35,6 +35,7 @@ const DEFAULT_CONTROLS: ControlsState = {
   filter: 'all',
   overlay: 'none',
   hlMode: 'direct',
+  hlDir: 'both',
   layoutName: 'dagre',
   filterTab: 'expr',
   pathFilter: { include: [], exclude: [], growHops: false },
@@ -212,7 +213,7 @@ const DependencyGraph: React.FC = () => {
         }
         return;
       }
-      ops.applyNodeHighlight(cy, n, controlsRef.current.hlMode === 'transitive');
+      ops.applyNodeHighlight(cy, n, controlsRef.current.hlMode === 'transitive', controlsRef.current.hlDir);
       openInspectorFor(n);
     };
     handlersRef.current.onBgTap = () => {
@@ -340,6 +341,16 @@ const DependencyGraph: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controls.overlay, toggledPaths]);
 
+  // --- Re-apply node highlight when direction/mode changes with a node open ---
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !inspector) return;
+    const n = cy.getElementById(inspector.id) as cytoscape.NodeSingular;
+    if (!n || n.empty()) return;
+    ops.applyNodeHighlight(cy, n, controls.hlMode === 'transitive', controls.hlDir);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controls.hlMode, controls.hlDir]);
+
   // --- Search -----------------------------------------------------------------
   useEffect(() => {
     const cy = cyRef.current;
@@ -422,7 +433,7 @@ const DependencyGraph: React.FC = () => {
     if (!t || t.empty()) return;
     t.removeClass('hidden');
     cy.animate({ center: { eles: t }, duration: 200 });
-    ops.applyNodeHighlight(cy, t, controlsRef.current.hlMode === 'transitive');
+    ops.applyNodeHighlight(cy, t, controlsRef.current.hlMode === 'transitive', controlsRef.current.hlDir);
     openInspectorFor(t);
   };
 

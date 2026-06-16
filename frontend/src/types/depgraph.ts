@@ -74,6 +74,8 @@ export type OverlayMode = 'none' | 'violations' | 'cycles' | 'coverage';
 /** Whether a graph node's file has debug output enabled, disabled, or no `debug()` calls at all. */
 export type DebugState = 'on' | 'off' | 'none';
 export type HighlightMode = 'direct' | 'transitive';
+/** Which edges to highlight when a node is clicked: both directions, only what it imports, or only what imports it. */
+export type EdgeDir = 'both' | 'imports' | 'importedBy';
 
 export interface InspectorData {
   id: string;

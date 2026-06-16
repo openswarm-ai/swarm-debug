@@ -1,6 +1,7 @@
 import cytoscape from 'cytoscape';
 import {
   ColorMode,
+  EdgeDir,
   FilterMode,
   GraphElement,
   GraphPayload,
@@ -164,10 +165,18 @@ export function showCoverage(cy: cytoscape.Core, toggledPaths: Set<string>): str
   return `${on.length} of ${instrumentable.length} file${instrumentable.length > 1 ? 's' : ''} emitting debug output`;
 }
 
-export function applyNodeHighlight(cy: cytoscape.Core, n: cytoscape.NodeSingular, transitive: boolean): void {
+export function applyNodeHighlight(
+  cy: cytoscape.Core,
+  n: cytoscape.NodeSingular,
+  transitive: boolean,
+  dir: EdgeDir = 'both',
+): void {
   clearHighlight(cy);
-  const inc = transitive ? n.predecessors() : n.incomers();
-  const out = transitive ? n.successors() : n.outgoers();
+  const empty = cy.collection();
+  // Edges point importer -> imported, so outgoers are this node's imports and
+  // incomers are the files that import it.
+  const inc = dir === 'imports' ? empty : transitive ? n.predecessors() : n.incomers();
+  const out = dir === 'importedBy' ? empty : transitive ? n.successors() : n.outgoers();
   const keep = n.union(inc).union(out);
   cy.elements().addClass('faded');
   keep.union(keep.ancestors()).removeClass('faded');
