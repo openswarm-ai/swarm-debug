@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarm-debug"
-version = "0.1.57"
+version = "0.1.58"
 description = "A colorized, toggleable debug logger with a web GUI"
 readme = "README.md"
 license = "MIT"
