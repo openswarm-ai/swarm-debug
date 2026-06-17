@@ -29,6 +29,15 @@ export interface ControlsState {
   layoutName: LayoutName;
   filterTab: FilterTab;
   pathFilter: PathFilter;
+  // folder view: ids (root-relative POSIX dir paths) of currently-collapsed folders.
+  folderCollapsed: string[];
+}
+
+export interface FolderActions {
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
+  onCollapseDepth: (depth: number) => void;
+  count: number;
 }
 
 interface Props {
@@ -36,6 +45,7 @@ interface Props {
   update: (partial: Partial<ControlsState>) => void;
   stats: Stats | null;
   layoutDisabled: (l: LayoutName) => boolean;
+  folderActions?: FolderActions;
 }
 
 const MIN_WIDTH = 200;
@@ -43,7 +53,7 @@ const MAX_WIDTH = 460;
 const DEFAULT_WIDTH = 232;
 const WIDTH_STORAGE_KEY = 'depgraph-sidebar-width';
 
-const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisabled }) => {
+const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisabled, folderActions }) => {
   const c = useClaudeTokens();
 
   const [width, setWidth] = useState<number>(() => {
@@ -117,6 +127,20 @@ const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisable
     color: c.text.primary,
     outline: 'none',
     cursor: 'pointer',
+  };
+
+  const folderBtnSx = {
+    flex: 1,
+    border: `1px solid ${c.border.strong}`,
+    borderRadius: `${c.radius.md}px`,
+    py: 0.6,
+    bgcolor: c.bg.surface,
+    color: c.text.primary,
+    fontSize: '0.72rem',
+    textTransform: 'none' as const,
+    cursor: 'pointer',
+    '&:hover': { bgcolor: c.bg.elevated },
+    transition: c.transition,
   };
 
   const renderSection = (title: string, children: React.ReactNode) => (
@@ -212,11 +236,42 @@ const GraphControls: React.FC<Props> = ({ controls, update, stats, layoutDisable
           controls.view,
           [
             { val: 'file' as GraphView, label: 'File' },
+            { val: 'folder' as GraphView, label: 'Folder' },
             { val: 'pkg' as GraphView, label: 'Package' },
           ],
           (v) => update({ view: v }),
         ),
       )}
+
+      {controls.view === 'folder' &&
+        folderActions &&
+        renderSection(
+          'Folders',
+          <>
+            <Typography sx={{ fontSize: '0.7rem', color: c.text.secondary, mb: 0.75 }}>
+              Double-click a folder to expand / collapse it.
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.75 }}>
+              <Box component="button" onClick={folderActions.onExpandAll} sx={folderBtnSx}>
+                Expand all
+              </Box>
+              <Box component="button" onClick={folderActions.onCollapseAll} sx={folderBtnSx}>
+                Collapse all
+              </Box>
+            </Box>
+            <Typography sx={{ fontSize: '0.7rem', color: c.text.secondary, mt: 1.25, mb: 0.5 }}>Collapse below depth</Typography>
+            <Box sx={{ display: 'flex', gap: 0.75 }}>
+              {[1, 2, 3].map((d) => (
+                <Box key={d} component="button" onClick={() => folderActions.onCollapseDepth(d)} sx={{ ...folderBtnSx, flex: 1 }}>
+                  {d}
+                </Box>
+              ))}
+            </Box>
+            <Typography sx={{ fontSize: '0.65rem', color: c.text.muted, mt: 1 }}>
+              {folderActions.count} folder{folderActions.count === 1 ? '' : 's'} collapsed
+            </Typography>
+          </>,
+        )}
 
       {renderSection(
         'Display',

@@ -18,6 +18,7 @@ interface Props {
   onDebugToggle: () => void;
   onDebugImports: () => void;
   onDebugImporters: () => void;
+  onToggleCollapse: () => void;
 }
 
 const GraphInspector: React.FC<Props> = ({
@@ -32,6 +33,7 @@ const GraphInspector: React.FC<Props> = ({
   onDebugToggle,
   onDebugImports,
   onDebugImporters,
+  onToggleCollapse,
 }) => {
   const c = useClaudeTokens();
 
@@ -124,11 +126,25 @@ const GraphInspector: React.FC<Props> = ({
       </Box>
 
       <Box sx={{ flex: '1 1 auto', overflow: 'auto', px: 1.75, py: 1.5 }}>
-        {renderMeta('Package', node.pkg)}
-        {renderMeta('Layer', node.layer)}
-        {renderMeta('Imported by', node.indeg)}
-        {renderMeta('Imports', node.outdeg)}
-        {renderMeta('Instability', node.instability.toFixed(2))}
+        {node.isFolder ? (
+          <>
+            {renderMeta('Folder', node.pkg)}
+            {renderMeta('State', node.collapsed ? 'collapsed' : 'expanded')}
+            {renderMeta('Files', node.fileCount ?? 0)}
+            {!node.collapsed && renderMeta('Sub-items', node.childCount ?? 0)}
+            {renderMeta('Imported by', node.indeg)}
+            {renderMeta('Imports', node.outdeg)}
+            {renderMeta('Instability', node.instability.toFixed(2))}
+          </>
+        ) : (
+          <>
+            {renderMeta('Package', node.pkg)}
+            {renderMeta('Layer', node.layer)}
+            {renderMeta('Imported by', node.indeg)}
+            {renderMeta('Imports', node.outdeg)}
+            {renderMeta('Instability', node.instability.toFixed(2))}
+          </>
+        )}
 
         <Box sx={{ mt: 1.25, height: 6, borderRadius: `${c.radius.xs}px`, bgcolor: c.bg.elevated, overflow: 'hidden' }}>
           <Box
@@ -143,7 +159,17 @@ const GraphInspector: React.FC<Props> = ({
           stable → unstable
         </Typography>
 
-        {!node.isExt && (
+        {node.isFolder && (
+          <Box
+            component="button"
+            onClick={onToggleCollapse}
+            sx={{ ...actionBtnSx, width: '100%', py: 0.8, mt: 1.5, fontWeight: 600 }}
+          >
+            {node.collapsed ? 'Expand folder' : 'Collapse folder'}
+          </Box>
+        )}
+
+        {!node.isExt && !node.isFolder && (
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75, mt: 1.5 }}>
             <Box component="button" onClick={onBlast} sx={actionBtnSx}>Blast radius</Box>
             <Box component="button" onClick={onPath} sx={actionBtnSx}>Trace path…</Box>
@@ -152,7 +178,7 @@ const GraphInspector: React.FC<Props> = ({
           </Box>
         )}
 
-        {!node.isExt && (
+        {!node.isExt && !node.isFolder && (
           <Box sx={{ mt: 1.75, pt: 1.25, borderTop: `1px solid ${c.border.subtle}` }}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
               <Typography sx={{ fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.04em', color: c.text.muted }}>

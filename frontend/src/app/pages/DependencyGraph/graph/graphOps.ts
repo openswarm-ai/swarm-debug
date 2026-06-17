@@ -12,9 +12,16 @@ import {
 } from '@/types/depgraph';
 import { instColor, instability, LAYOUTS, layerOf } from './cyConfig';
 import { isPathFilterEmpty, makePathMatcher } from './glob';
+import { buildFolderElements } from './folderView';
 
 /** Fresh, mutable element copies (redux state is frozen; cytoscape mutates). */
-export function currentElements(data: GraphPayload, view: GraphView, extOn: boolean): cytoscape.ElementDefinition[] {
+export function currentElements(
+  data: GraphPayload,
+  view: GraphView,
+  extOn: boolean,
+  collapsed: Set<string>,
+): cytoscape.ElementDefinition[] {
+  if (view === 'folder') return buildFolderElements(data, extOn, collapsed);
   const base = view === 'file' ? data.fileElements : data.pkgElements;
   const all: GraphElement[] = view === 'file' && extOn ? base.concat(data.extElements) : base;
   return all.map((e) => ({ data: { ...e.data } }));
@@ -67,7 +74,7 @@ function pathVisible(
   const match = makePathMatcher(pathFilter.include, pathFilter.exclude);
   let visible = leaves.filter((n) => {
     if (n.data('isExt')) return true;
-    const key = view === 'file' ? n.data('path') : n.data('id');
+    const key = view === 'file' || view === 'folder' ? n.data('path') : n.data('id');
     return key ? match(String(key)) : true;
   });
   if (pathFilter.growHops) {
@@ -87,7 +94,11 @@ export interface VisibilityOpts {
 /**
  * Single source of truth for the `hidden` class. Combines every active filter
  * dimension (degree filter ∧ path globs ∧ cross-package edges) so the dimensions
- * never clobber one another, then prunes orphaned edges and empty package boxes.
+ * never clobber one another, then prunes orphaned edges and empty parent boxes.
+ *
+ * Folder collapse is NOT handled here: it is baked into the element set by
+ * `buildFolderElements` (collapsed subtrees are omitted), so a collapsed folder
+ * is a childless node and is naturally untouched by the parent-box prune below.
  */
 export function recomputeVisibility(cy: cytoscape.Core, opts: VisibilityOpts): void {
   const leaves = cy.nodes('[!isParent]');
@@ -102,7 +113,12 @@ export function recomputeVisibility(cy: cytoscape.Core, opts: VisibilityOpts): v
     if (e.source().hasClass('hidden') || e.target().hasClass('hidden')) e.addClass('hidden');
     else if (opts.crossOnly && e.data('samePkg')) e.addClass('hidden');
   });
-  cy.nodes('[?isParent]').forEach((p) => {
+
+  // Prune empty boxes deepest-first so a parent sees its children's updated
+  // hidden state. Uses the structural `:parent` selector, so collapsed folders
+  // (which are childless) are never pruned.
+  const boxes = cy.nodes(':parent').sort((a, b) => (b.data('depth') ?? 0) - (a.data('depth') ?? 0));
+  boxes.forEach((p) => {
     if (p.children().filter((ch) => !ch.hasClass('hidden')).length === 0) p.addClass('hidden');
   });
 }
@@ -240,8 +256,6 @@ export function instrumentablePaths(coll: cytoscape.NodeCollection, instrumented
 export function buildInspectorData(n: cytoscape.NodeSingular, layers: Record<string, number>): InspectorData {
   const pkg = n.data('pkg') || '';
   const lyr = layerOf(pkg, layers);
-  const indeg = n.data('indeg') || 0;
-  const outdeg = n.data('outdeg') || 0;
   const isExt = !!n.data('isExt');
   const layer = isExt ? '\u2014' : lyr ? `${lyr.name}${lyr.rank != null ? ` (L${lyr.rank})` : ''}` : '\u2014';
 
@@ -250,6 +264,50 @@ export function buildInspectorData(n: cytoscape.NodeSingular, layers: Record<str
       .map((x) => ({ id: x.id(), label: String(x.data('label')) }))
       .sort((a, b) => a.label.localeCompare(b.label));
 
+  if (n.data('isFolder')) {
+    // Aggregate the subtree's boundary-crossing edges. This works whether the
+    // folder is expanded (real + nested-meta edges among its descendants) or
+    // collapsed (the folder node itself is the endpoint of its meta edges).
+    const cy = n.cy();
+    const sub = n.union(n.descendants());
+    const ids = new Set<string>();
+    sub.forEach((x) => {
+      ids.add(x.id());
+    });
+    const importTargets = new Set<string>();
+    const importerSources = new Set<string>();
+    sub.connectedEdges().forEach((e) => {
+      const fromInside = ids.has(e.source().id());
+      const toInside = ids.has(e.target().id());
+      if (fromInside && !toInside) importTargets.add(e.target().id());
+      if (toInside && !fromInside) importerSources.add(e.source().id());
+    });
+    const toItemsFromIds = (set: Set<string>) =>
+      Array.from(set)
+        .map((id) => ({ id, label: String(cy.getElementById(id).data('label')) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    const indeg = importerSources.size;
+    const outdeg = importTargets.size;
+    return {
+      id: n.id(),
+      label: String(n.data('label')),
+      pkg: n.id(),
+      layer,
+      indeg,
+      outdeg,
+      instability: instability(indeg, outdeg),
+      isExt: false,
+      isFolder: true,
+      collapsed: n.isChildless(),
+      childCount: n.children().length,
+      fileCount: n.data('fileCount') || 0,
+      imports: toItemsFromIds(importTargets),
+      importers: toItemsFromIds(importerSources),
+    };
+  }
+
+  const indeg = n.data('indeg') || 0;
+  const outdeg = n.data('outdeg') || 0;
   return {
     id: n.id(),
     label: String(n.data('label')),

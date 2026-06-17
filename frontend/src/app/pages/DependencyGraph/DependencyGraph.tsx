@@ -24,6 +24,7 @@ import {
   registerCytoscapePlugins,
 } from '@/app/pages/DependencyGraph/graph/cyConfig';
 import * as ops from '@/app/pages/DependencyGraph/graph/graphOps';
+import { folderDepths } from '@/app/pages/DependencyGraph/graph/folderView';
 
 registerCytoscapePlugins();
 
@@ -39,6 +40,7 @@ const DEFAULT_CONTROLS: ControlsState = {
   layoutName: 'dagre',
   filterTab: 'expr',
   pathFilter: { include: [], exclude: [], growHops: false },
+  folderCollapsed: [],
 };
 
 const visibilityOpts = (c: ControlsState): ops.VisibilityOpts => ({
@@ -57,6 +59,8 @@ function loadInitialControls(): ControlsState {
       const saved = JSON.parse(raw) as Partial<ControlsState>;
       return {
         ...DEFAULT_CONTROLS,
+        ...(saved.view ? { view: saved.view } : {}),
+        ...(saved.folderCollapsed ? { folderCollapsed: saved.folderCollapsed } : {}),
         ...(saved.filterTab ? { filterTab: saved.filterTab } : {}),
         ...(saved.pathFilter ? { pathFilter: { ...DEFAULT_CONTROLS.pathFilter, ...saved.pathFilter } } : {}),
       };
@@ -87,6 +91,9 @@ const DependencyGraph: React.FC = () => {
 
   const cyRef = useRef<cytoscape.Core | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const togglesRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const toggleColorsRef = useRef({ bg: '', fg: '', border: '', accent: '', accentBg: '' });
   const pathModeRef = useRef(false);
   const pathSrcRef = useRef<cytoscape.NodeSingular | null>(null);
   const controlsRef = useRef(controls);
@@ -105,9 +112,13 @@ const DependencyGraph: React.FC = () => {
 
   const pkgColorMap = useMemo(() => {
     if (!data) return {};
-    const els = controls.view === 'file' ? data.fileElements : data.pkgElements;
+    const els = controls.view === 'pkg' ? data.pkgElements : data.fileElements;
     return buildPkgColorMap(els);
   }, [data, controls.view]);
+
+  // Every folder and its depth, for the collapse-set controls (pure, no cy).
+  const folderList = useMemo(() => (data ? folderDepths(data) : []), [data]);
+  const folderListRef = useRef(folderList);
 
   useEffect(() => {
     if (!data && !loading) dispatch(scanGraph());
@@ -141,28 +152,57 @@ const DependencyGraph: React.FC = () => {
 
   const update = useCallback((partial: Partial<ControlsState>) => {
     setControls((prev) => {
-      const next = { ...prev, ...partial };
-      // Concentric is incompatible with the compound file view; fall back.
-      if (next.view === 'file' && !LAYOUTS[next.layoutName].compound) next.layoutName = 'dagre';
+      let next = { ...prev, ...partial };
+      // Concentric is incompatible with the compound file/folder views; fall back.
+      if (next.view !== 'pkg' && !LAYOUTS[next.layoutName].compound) next.layoutName = 'dagre';
+      // Entering folder view with no collapse set: default to the top-level
+      // directories (a file-explorer-at-depth-1 starting point).
+      if (partial.view === 'folder' && prev.view !== 'folder' && next.folderCollapsed.length === 0) {
+        const top = folderListRef.current.filter((f) => f.depth === 0).map((f) => f.id);
+        if (top.length) next = { ...next, folderCollapsed: top };
+      }
       return next;
     });
   }, []);
 
-  // Persist just the path-filter slice (and which tab is open) across reloads.
+  // Persist the view, collapse set, path-filter slice, and open tab across reloads.
   useEffect(() => {
     try {
       localStorage.setItem(
         PATH_FILTER_STORAGE_KEY,
-        JSON.stringify({ filterTab: controls.filterTab, pathFilter: controls.pathFilter }),
+        JSON.stringify({
+          view: controls.view,
+          folderCollapsed: controls.folderCollapsed,
+          filterTab: controls.filterTab,
+          pathFilter: controls.pathFilter,
+        }),
       );
     } catch {
       /* ignore */
     }
-  }, [controls.filterTab, controls.pathFilter]);
+  }, [controls.view, controls.folderCollapsed, controls.filterTab, controls.pathFilter]);
 
   const layoutDisabled = useCallback(
-    (l: LayoutName) => controls.view === 'file' && !LAYOUTS[l].compound,
+    (l: LayoutName) => controls.view !== 'pkg' && !LAYOUTS[l].compound,
     [controls.view],
+  );
+
+  // --- Folder collapse-set actions -------------------------------------------
+  const toggleCollapse = useCallback(
+    (id: string) => {
+      const cur = controlsRef.current.folderCollapsed;
+      update({ folderCollapsed: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id] });
+    },
+    [update],
+  );
+  const onExpandAll = useCallback(() => update({ folderCollapsed: [] }), [update]);
+  const onCollapseAll = useCallback(
+    () => update({ folderCollapsed: folderList.map((f) => f.id) }),
+    [update, folderList],
+  );
+  const onCollapseDepth = useCallback(
+    (depth: number) => update({ folderCollapsed: folderList.filter((f) => f.depth >= depth).map((f) => f.id) }),
+    [update, folderList],
   );
 
   // --- Imperative helpers bound to current state via refs --------------------
@@ -185,14 +225,19 @@ const DependencyGraph: React.FC = () => {
   // mutate refs during render.
   const handlersRef = useRef({
     onNodeTap: (_n: cytoscape.NodeSingular) => {},
+    onFolderTap: (_n: cytoscape.NodeSingular) => {},
+    onToggle: (_id: string) => {},
     onBgTap: () => {},
   });
+  // Manual double-tap detection for folder boxes (cytoscape has no dbltap).
+  const lastFolderTapRef = useRef<{ id: string; t: number }>({ id: '', t: 0 });
 
   useEffect(() => {
     controlsRef.current = controls;
     pkgColorMapRef.current = pkgColorMap;
     toggledPathsRef.current = toggledPaths;
     instrumentedSetRef.current = instrumentedSet;
+    folderListRef.current = folderList;
     handlersRef.current.onNodeTap = (n: cytoscape.NodeSingular) => {
       const cy = cyRef.current;
       if (!cy) return;
@@ -216,6 +261,19 @@ const DependencyGraph: React.FC = () => {
       ops.applyNodeHighlight(cy, n, controlsRef.current.hlMode === 'transitive', controlsRef.current.hlDir);
       openInspectorFor(n);
     };
+    handlersRef.current.onToggle = (id: string) => toggleCollapse(id);
+    handlersRef.current.onFolderTap = (n: cytoscape.NodeSingular) => {
+      // Double-tap toggles collapse; single tap opens the folder inspector.
+      const now = Date.now();
+      const last = lastFolderTapRef.current;
+      if (last.id === n.id() && now - last.t < 300) {
+        lastFolderTapRef.current = { id: '', t: 0 };
+        toggleCollapse(n.id());
+      } else {
+        lastFolderTapRef.current = { id: n.id(), t: now };
+        openInspectorFor(n);
+      }
+    };
     handlersRef.current.onBgTap = () => {
       const cy = cyRef.current;
       if (!cy || pathModeRef.current) return;
@@ -226,6 +284,22 @@ const DependencyGraph: React.FC = () => {
       reapplyOverlay(cy);
     };
   });
+
+  // Keep the overlay toggle buttons in sync with the theme.
+  useEffect(() => {
+    toggleColorsRef.current = {
+      bg: c.bg.surface,
+      fg: c.text.secondary,
+      border: c.border.strong,
+      accent: c.accent.primary,
+      accentBg: c.bg.page,
+    };
+    togglesRef.current.forEach((b) => {
+      b.style.background = c.bg.surface;
+      b.style.color = c.text.secondary;
+      b.style.borderColor = c.border.strong;
+    });
+  }, [c]);
 
   // --- Init cytoscape once ---------------------------------------------------
   useEffect(() => {
@@ -254,6 +328,10 @@ const DependencyGraph: React.FC = () => {
     cy.on('tap', 'node', (e) => {
       const n = e.target as cytoscape.NodeSingular;
       bringToFront(n);
+      if (n.data('isFolder')) {
+        handlersRef.current.onFolderTap(n);
+        return;
+      }
       if (n.data('isParent')) return;
       handlersRef.current.onNodeTap(n);
     });
@@ -263,8 +341,99 @@ const DependencyGraph: React.FC = () => {
     cy.on('grab', 'node', (e) => {
       bringToFront(e.target as cytoscape.NodeSingular);
     });
+
+    // Overlay disclosure buttons: one per visible folder box, parked at its
+    // top-left corner, re-positioned on every render frame (pan/zoom/layout).
+    const buttonStyle: Partial<CSSStyleDeclaration> = {
+      position: 'absolute',
+      top: '0',
+      left: '0',
+      width: '17px',
+      height: '17px',
+      padding: '0',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '13px',
+      fontWeight: '700',
+      lineHeight: '1',
+      borderStyle: 'solid',
+      borderWidth: '1px',
+      borderRadius: '5px',
+      cursor: 'pointer',
+      pointerEvents: 'auto',
+      userSelect: 'none',
+      boxSizing: 'border-box',
+      boxShadow: '0 1px 2px rgba(0,0,0,0.18)',
+      fontFamily: 'inherit',
+    };
+    const syncToggles = () => {
+      const overlay = overlayRef.current;
+      if (!overlay) return;
+      const map = togglesRef.current;
+      const seen = new Set<string>();
+      cy.nodes('[?isFolder]').forEach((n) => {
+        if (!n.visible()) return;
+        const id = n.id();
+        seen.add(id);
+        let btn = map.get(id);
+        if (!btn) {
+          btn = document.createElement('button');
+          btn.type = 'button';
+          Object.assign(btn.style, buttonStyle);
+          const col = () => toggleColorsRef.current;
+          btn.addEventListener('mousedown', (ev) => ev.stopPropagation());
+          btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            handlersRef.current.onToggle(id);
+          });
+          btn.addEventListener('mouseenter', () => {
+            btn!.style.background = col().accentBg;
+            btn!.style.color = col().accent;
+            btn!.style.borderColor = col().accent;
+          });
+          btn.addEventListener('mouseleave', () => {
+            btn!.style.background = col().bg;
+            btn!.style.color = col().fg;
+            btn!.style.borderColor = col().border;
+          });
+          overlay.appendChild(btn);
+          map.set(id, btn);
+        }
+        const collapsed = n.isChildless();
+        btn.textContent = collapsed ? '+' : '\u2212';
+        btn.title = collapsed ? 'Expand folder' : 'Collapse folder';
+        const col = toggleColorsRef.current;
+        btn.style.background = col.bg;
+        btn.style.color = col.fg;
+        btn.style.borderColor = col.border;
+        const bb = n.renderedBoundingBox({ includeLabels: false, includeOverlays: false });
+        btn.style.transform = `translate(${Math.round(bb.x1 + 3)}px, ${Math.round(bb.y1 + 3)}px)`;
+      });
+      map.forEach((btn, id) => {
+        if (!seen.has(id)) {
+          btn.remove();
+          map.delete(id);
+        }
+      });
+    };
+    let raf = 0;
+    const scheduleSync = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        syncToggles();
+      });
+    };
+    cy.on('render', scheduleSync);
+
     cyRef.current = cy;
     return () => {
+      cy.off('render', scheduleSync);
+      if (raf) cancelAnimationFrame(raf);
+      togglesRef.current.forEach((b) => b.remove());
+      togglesRef.current.clear();
       cy.destroy();
       cyRef.current = null;
     };
@@ -280,14 +449,14 @@ const DependencyGraph: React.FC = () => {
     pathModeRef.current = false;
     setPathArmed(false);
     cy.elements().remove();
-    cy.add(ops.currentElements(data, controls.view, controls.extOn));
+    cy.add(ops.currentElements(data, controls.view, controls.extOn, new Set(controls.folderCollapsed)));
     ops.assignVisuals(cy, controls.colorMode, pkgColorMapRef.current);
     ops.recomputeVisibility(cy, visibilityOpts(controls));
     ops.runLayout(cy, controls.layoutName);
     setMeta(ops.computeMeta(cy));
     reapplyOverlay(cy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, controls.view, controls.extOn]);
+  }, [data, controls.view, controls.extOn, controls.folderCollapsed]);
 
   // --- Restyle on theme change -----------------------------------------------
   useEffect(() => {
@@ -368,6 +537,9 @@ const DependencyGraph: React.FC = () => {
     fn(cy, n);
   };
 
+  const onToggleFolderCollapse = () => {
+    if (inspector?.isFolder) toggleCollapse(inspector.id);
+  };
   const onBlast = () => withNode((cy, n) => ops.applyNodeHighlight(cy, n, true));
   const onIsolate = () => withNode((cy, n) => setMeta(ops.isolate(cy, n, controlsRef.current.layoutName)));
   const onPath = () =>
@@ -511,10 +683,20 @@ const DependencyGraph: React.FC = () => {
 
       {/* Body */}
       <Box sx={{ flex: '1 1 auto', display: 'flex', minHeight: 0 }}>
-        <GraphControls controls={controls} update={update} stats={data?.stats || null} layoutDisabled={layoutDisabled} />
+        <GraphControls
+          controls={controls}
+          update={update}
+          stats={data?.stats || null}
+          layoutDisabled={layoutDisabled}
+          folderActions={{ onExpandAll, onCollapseAll, onCollapseDepth, count: controls.folderCollapsed.length }}
+        />
 
         <Box sx={{ flex: '1 1 auto', position: 'relative', minWidth: 0 }}>
           <Box ref={containerRef} sx={{ position: 'absolute', inset: 0, bgcolor: GRAPH_THEME[mode].canvas }} />
+          <Box
+            ref={overlayRef}
+            sx={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 5 }}
+          />
 
           {loading && (
             <Box sx={overlaySx(c)}>
@@ -584,6 +766,7 @@ const DependencyGraph: React.FC = () => {
               onDebugToggle={onDebugToggle}
               onDebugImports={onDebugImports}
               onDebugImporters={onDebugImporters}
+              onToggleCollapse={onToggleFolderCollapse}
             />
           </motion.div>
         )}

@@ -11,6 +11,13 @@ export interface GraphNodeData {
   // root-relative POSIX file path (file view leaves only); join key with the
   // debugger tree, whose file ids are `root/<path>`.
   path?: string;
+  // folder-view compound boxes (one per directory prefix). `depth` is 0 for a
+  // top-level folder; `fileCount` counts the leaves anywhere beneath it;
+  // `clabel` is the collapsed label (folder name + file count).
+  isFolder?: boolean;
+  depth?: number;
+  fileCount?: number;
+  clabel?: string;
   // assigned client-side
   color?: string;
   pad?: number;
@@ -22,6 +29,10 @@ export interface GraphEdgeData {
   violation?: boolean;
   cycle?: boolean;
   samePkg?: boolean;
+  // folder-view aggregated edge: bundles `metaCount` underlying file edges
+  // between the two collapsed-folder representatives.
+  meta?: boolean;
+  metaCount?: number;
 }
 
 export interface GraphElement {
@@ -65,7 +76,7 @@ export interface PathFilter {
 
 export type FilterTab = 'expr' | 'picker';
 
-export type GraphView = 'file' | 'pkg';
+export type GraphView = 'file' | 'pkg' | 'folder';
 export type ColorMode = 'pkg' | 'inst';
 export type FilterMode = 'all' | 'single' | 'orphan' | 'leaf' | 'hub';
 export type LayoutName = 'dagre' | 'fcose' | 'concentric';
@@ -87,6 +98,11 @@ export interface InspectorData {
   outdeg: number;
   instability: number;
   isExt: boolean;
+  // folder-view compound box: lists immediate children and aggregated deps.
+  isFolder?: boolean;
+  collapsed?: boolean;
+  childCount?: number;
+  fileCount?: number;
   imports: { id: string; label: string }[];
   importers: { id: string; label: string }[];
 }

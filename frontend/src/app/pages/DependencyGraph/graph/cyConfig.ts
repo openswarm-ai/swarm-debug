@@ -143,6 +143,31 @@ export function buildGraphStyle(t: GraphTheme): cytoscape.StylesheetStyle[] {
       },
     },
     {
+      // Nested folder boxes get progressively more opaque so depth reads clearly.
+      selector: 'node[?isFolder]',
+      style: {
+        // mapData strings are valid at runtime; the typings only allow numbers.
+        'background-opacity': 'mapData(depth, 0, 6, 0.82, 0.97)' as unknown as number,
+      },
+    },
+    {
+      // A collapsed folder has no children in the graph (they are omitted from
+      // the element set), so `:childless` matches it. It renders as a single
+      // solid node labeled with the folder name and its file count.
+      selector: 'node[?isFolder]:childless',
+      style: {
+        'background-fill': 'solid',
+        'background-color': t.parentFill2,
+        'background-opacity': 0.97,
+        'border-width': 1.5,
+        'border-color': t.parentBorder,
+        'border-opacity': 1,
+        'text-valign': 'center',
+        label: 'data(clabel)',
+        padding: '10px',
+      },
+    },
+    {
       selector: 'edge',
       style: {
         width: 1.2,
@@ -154,6 +179,23 @@ export function buildGraphStyle(t: GraphTheme): cytoscape.StylesheetStyle[] {
         // Always paint edges beneath every node (including parent card boxes
         // and the lifted 'top'-depth card), regardless of compound depth.
         'z-compound-depth': 'bottom',
+      },
+    },
+    {
+      // Folder-view aggregated edges: thickness scales with the bundle size.
+      // Declared before the violation/cycle/highlight rules so those still win.
+      selector: 'edge[?meta]',
+      style: {
+        width: 'mapData(metaCount, 1, 30, 1.6, 7)',
+        'line-color': t.edge,
+        'target-arrow-color': t.edge,
+        label: 'data(metaCount)',
+        'font-size': 8,
+        color: t.parentText,
+        'text-background-color': t.canvas,
+        'text-background-opacity': 0.7,
+        'text-background-padding': '1px',
+        'text-background-shape': 'roundrectangle',
       },
     },
     {
