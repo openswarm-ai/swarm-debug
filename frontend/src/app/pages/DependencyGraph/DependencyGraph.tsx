@@ -441,6 +441,9 @@ const DependencyGraph: React.FC = () => {
   }, []);
 
   // --- Rebuild elements on data / view / ext change --------------------------
+  // A full teardown + re-fit is appropriate here: these genuinely replace the
+  // whole graph. Folder collapse is handled incrementally below so it does not
+  // wipe the canvas or jump the viewport on every toggle.
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !data) return;
@@ -456,7 +459,26 @@ const DependencyGraph: React.FC = () => {
     setMeta(ops.computeMeta(cy));
     reapplyOverlay(cy);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, controls.view, controls.extOn, controls.folderCollapsed]);
+  }, [data, controls.view, controls.extOn]);
+
+  // --- Smoothly reflow on folder collapse / expand ---------------------------
+  // Diff the element set instead of rebuilding it: persisting nodes keep their
+  // positions (no flash), and the layout runs without re-fitting so the camera
+  // stays put. New children are seeded at their folder's position and animated
+  // outward. When the desired set already matches (e.g. right after a view
+  // switch that the full rebuild handled) the diff is a no-op and we bail.
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !data || cy.elements().empty()) return;
+    const desired = ops.currentElements(data, controls.view, controls.extOn, new Set(controls.folderCollapsed));
+    if (!ops.diffElements(cy, desired)) return;
+    ops.assignVisuals(cy, controls.colorMode, pkgColorMapRef.current);
+    ops.recomputeVisibility(cy, visibilityOpts(controls));
+    ops.runLayout(cy, controls.layoutName, { fit: false, animate: true, animationDuration: 260, animationEasing: 'ease-out' });
+    setMeta(ops.computeMeta(cy));
+    reapplyOverlay(cy);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controls.folderCollapsed]);
 
   // --- Restyle on theme change -----------------------------------------------
   useEffect(() => {

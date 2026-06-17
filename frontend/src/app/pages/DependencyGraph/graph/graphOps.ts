@@ -123,10 +123,51 @@ export function recomputeVisibility(cy: cytoscape.Core, opts: VisibilityOpts): v
   });
 }
 
-export function runLayout(cy: cytoscape.Core, layoutName: LayoutName): void {
+export function runLayout(
+  cy: cytoscape.Core,
+  layoutName: LayoutName,
+  override: Record<string, unknown> = {},
+): void {
   const preset = LAYOUTS[layoutName] || LAYOUTS.dagre;
-  const opts = Object.assign({ fit: true, padding: 30 }, preset.opts);
+  const opts = Object.assign({ fit: true, padding: 30 }, preset.opts, override);
   cy.elements(':visible').layout(opts).run();
+}
+
+/**
+ * Reconcile the graph to a new element set in place: keep nodes that persist
+ * (and their positions), remove the ones that vanished, add the new ones, and
+ * refresh data on survivors (e.g. meta-edge counts). Newly added nodes are
+ * seeded at their parent box's position so an ensuing animated layout makes
+ * them grow out of the folder rather than teleport in. Returns whether the
+ * element set actually changed structurally.
+ */
+export function diffElements(cy: cytoscape.Core, desired: cytoscape.ElementDefinition[]): boolean {
+  const want = new Map<string, cytoscape.ElementDefinition>();
+  desired.forEach((d) => {
+    if (d.data.id) want.set(String(d.data.id), d);
+  });
+  const haveIds = new Set<string>();
+  cy.elements().forEach((el) => haveIds.add(el.id()));
+
+  const toRemove = cy.elements().filter((el) => !want.has(el.id()));
+  const toAdd = desired.filter((d) => !haveIds.has(String(d.data.id)));
+  if (toRemove.length === 0 && toAdd.length === 0) return false;
+
+  // Refresh data on elements that persist (meta-edge counts/labels can shift).
+  desired.forEach((d) => {
+    const id = String(d.data.id);
+    if (haveIds.has(id)) cy.getElementById(id).data(d.data);
+  });
+
+  cy.batch(() => {
+    toRemove.remove();
+    const added = cy.add(toAdd);
+    added.nodes().forEach((n) => {
+      const p = n.parent();
+      if (p.nonempty()) n.position({ ...p.position() });
+    });
+  });
+  return true;
 }
 
 export function computeMeta(cy: cytoscape.Core): string {
